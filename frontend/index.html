@@ -1,0 +1,2475 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RAGEval — LLM Evaluation Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js" charset="utf-8"></script>
+
+  <style>
+    /* ── CSS Variables ────────────────────────────────────────── */
+    :root {
+      --canvas:         #ffffff;
+      --canvas-soft:    #fafafa;
+      --canvas-soft-2:  #f5f5f5;
+      --ink:            #171717;
+      --body:           #4d4d4d;
+      --mute:           #888888;
+      --hairline:       #ebebeb;
+      --hairline-strong:#a1a1a1;
+      --link:           #0070f3;
+      --error:          #ee0000;
+      --warning:        #f5a623;
+      --score-good:     #16a34a;
+      --score-warn:     #d97706;
+      --score-bad:      #dc2626;
+
+      --shadow-l1: inset 0 0 0 1px rgba(0,0,0,0.08);
+      --shadow-l2: 0px 1px 1px rgba(0,0,0,0.02), 0px 2px 2px rgba(0,0,0,0.04), inset 0 0 0 1px rgba(0,0,0,0.06);
+      --shadow-l4: 0px 2px 2px rgba(0,0,0,0.04), 0px 8px 16px -4px rgba(0,0,0,0.06), inset 0 0 0 1px rgba(0,0,0,0.06);
+    }
+
+    [x-cloak] { display: none !important; }
+    .plotly-fluid { width: 100%; display: block; }
+
+    /* ── Field labels ────────────────────────────────────────── */
+    .field-label {
+      font-size: 11px; font-weight: 500; color: var(--mute);
+      margin: 0 0 6px; text-transform: uppercase;
+      letter-spacing: 0.06em; font-family: 'JetBrains Mono', monospace;
+      display: block;
+    }
+    .field-label-xs {
+      font-size: 10px; font-weight: 500; color: var(--mute);
+      margin: 0 0 4px; text-transform: uppercase;
+      letter-spacing: 0.05em; font-family: 'JetBrains Mono', monospace;
+      display: block;
+    }
+
+    /* ── Metric chips ────────────────────────────────────────── */
+    .metric-chip {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 8px 10px; border-radius: 6px;
+      border: 1px solid var(--hairline);
+      background: var(--canvas); cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .metric-chip:hover { border-color: var(--hairline-strong); }
+    .metric-chip-ragas { border-color: #4285f4 !important; background: #f0f4ff !important; }
+    .metric-chip-deep  { border-color: #7c3aed !important; background: #f5f3ff !important; }
+    .metric-chip-box {
+      width: 14px; height: 14px; border-radius: 3px;
+      border: 1.5px solid; flex-shrink: 0; margin-top: 2px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--canvas-soft);
+      color: var(--ink);
+      font-family: 'Inter', system-ui, sans-serif;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Mesh Gradient Hero ──────────────────────────────────── */
+    .hero-mesh {
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-mesh::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 50%, rgba(0,124,240,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 80% 20%, rgba(0,223,216,0.10) 0%, transparent 55%),
+        radial-gradient(ellipse 50% 60% at 60% 80%, rgba(121,40,202,0.09) 0%, transparent 50%),
+        radial-gradient(ellipse 40% 40% at 85% 70%, rgba(255,0,128,0.08) 0%, transparent 45%),
+        radial-gradient(ellipse 35% 35% at 10% 85%, rgba(255,77,77,0.07) 0%, transparent 40%),
+        radial-gradient(ellipse 30% 30% at 50% 10%, rgba(249,203,40,0.06) 0%, transparent 35%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .hero-mesh > * { position: relative; z-index: 1; }
+
+    /* ── Cards ───────────────────────────────────────────────── */
+    .card {
+      background: var(--canvas);
+      border-radius: 8px;
+      box-shadow: var(--shadow-l2);
+      padding: 24px;
+    }
+    .card-lg {
+      background: var(--canvas);
+      border-radius: 12px;
+      box-shadow: var(--shadow-l4);
+      padding: 32px;
+    }
+    .card-soft {
+      background: var(--canvas-soft);
+      border-radius: 8px;
+      box-shadow: var(--shadow-l1);
+      padding: 24px;
+    }
+    .card-hover {
+      transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+    .card-hover:hover {
+      box-shadow: 0px 4px 8px rgba(0,0,0,0.06), 0px 12px 24px -8px rgba(0,0,0,0.08), inset 0 0 0 1px rgba(0,0,0,0.06);
+      transform: translateY(-1px);
+    }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+    .btn-primary {
+      background: var(--ink);
+      color: #ffffff;
+      border-radius: 100px;
+      font-weight: 500;
+      font-size: 14px;
+      line-height: 20px;
+      padding: 10px 20px;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .btn-primary:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
+    .btn-primary:active:not(:disabled) { transform: translateY(0); opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: var(--canvas);
+      color: var(--ink);
+      border-radius: 100px;
+      font-weight: 500;
+      font-size: 14px;
+      line-height: 20px;
+      padding: 10px 20px;
+      border: 1px solid var(--hairline);
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      border-color: var(--hairline-strong);
+      background: var(--canvas-soft);
+      transform: translateY(-1px);
+    }
+    .btn-secondary:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* Nav-scale buttons (6px radius) */
+    .btn-nav {
+      background: var(--ink);
+      color: #ffffff;
+      border-radius: 6px;
+      font-weight: 500;
+      font-size: 12px;
+      padding: 0 8px;
+      height: 28px;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      transition: opacity 0.15s;
+    }
+    .btn-nav:hover { opacity: 0.8; }
+    .btn-nav-ghost {
+      background: var(--canvas);
+      color: var(--ink);
+      border-radius: 6px;
+      font-weight: 500;
+      font-size: 12px;
+      padding: 0 8px;
+      height: 28px;
+      border: 1px solid var(--hairline);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      transition: border-color 0.15s;
+    }
+    .btn-nav-ghost:hover { border-color: var(--hairline-strong); }
+
+    /* Inline action button */
+    .btn-action {
+      background: var(--canvas-soft);
+      color: var(--ink);
+      border-radius: 6px;
+      font-weight: 500;
+      font-size: 12px;
+      padding: 6px 12px;
+      border: 1px solid var(--hairline);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-action:hover:not(:disabled) { border-color: var(--hairline-strong); background: var(--canvas); }
+    .btn-action:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Inputs ──────────────────────────────────────────────── */
+    .inp {
+      width: 100%;
+      background: var(--canvas);
+      border: 1px solid var(--hairline);
+      border-radius: 6px;
+      padding: 0 12px;
+      height: 40px;
+      font-size: 14px;
+      color: var(--ink);
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .inp:focus {
+      border-color: var(--ink);
+      box-shadow: 0 0 0 3px rgba(23,23,23,0.06);
+    }
+    .inp::placeholder { color: var(--mute); }
+    select.inp { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+    textarea.inp { height: auto; padding: 10px 12px; resize: vertical; line-height: 1.5; }
+    .inp-mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+
+    /* ── Badge / Pill ────────────────────────────────────────── */
+    .badge {
+      background: var(--canvas-soft);
+      color: var(--body);
+      border-radius: 9999px;
+      font-size: 12px;
+      padding: 2px 10px;
+      border: 1px solid var(--hairline);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .badge-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--mute);
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .badge-dot-green { background: var(--score-good); }
+    .badge-dot-pulse {
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ── Nav ─────────────────────────────────────────────────── */
+    nav.topnav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 50;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--hairline);
+      height: 64px;
+    }
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+    .nav-logo-mark {
+      width: 22px; height: 22px;
+      background: var(--ink);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .nav-wordmark {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ink);
+      letter-spacing: -0.3px;
+    }
+    .nav-tab {
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--mute);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .nav-tab:hover:not(.active):not(:disabled) { color: var(--ink); background: var(--canvas-soft); }
+    .nav-tab.active { color: var(--ink); font-weight: 500; }
+    .nav-tab:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Stepper ─────────────────────────────────────────────── */
+    .stepper {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 40px;
+    }
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .step-dot {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1.5px solid var(--hairline);
+      color: var(--mute);
+      background: var(--canvas);
+      transition: all 0.25s ease;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .step-dot.active {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: white;
+    }
+    .step-dot.done {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: white;
+    }
+    .step-label {
+      font-size: 13px;
+      color: var(--mute);
+      font-weight: 400;
+      transition: color 0.25s;
+    }
+    .step-label.active { color: var(--ink); font-weight: 500; }
+    .step-label.done { color: var(--body); }
+    .step-connector {
+      flex: 1;
+      height: 1px;
+      background: var(--hairline);
+      margin: 0 8px;
+      transition: background 0.3s;
+    }
+    .step-connector.done { background: var(--ink); }
+
+    /* ── Provider Card ───────────────────────────────────────── */
+    .provider-card {
+      background: var(--canvas);
+      border: 1.5px solid var(--hairline);
+      border-radius: 8px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+      width: 100%;
+    }
+    .provider-card:hover { border-color: var(--hairline-strong); }
+    .provider-card.sel-gemini {
+      border-color: #4285f4;
+      box-shadow: 0 0 0 3px rgba(66,133,244,0.1);
+    }
+    .provider-card.sel-groq {
+      border-color: #f55036;
+      box-shadow: 0 0 0 3px rgba(245,80,54,0.1);
+    }
+    .provider-icon {
+      width: 32px; height: 32px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: -0.5px;
+    }
+    .provider-icon-gemini { background: #e8f0fe; color: #4285f4; }
+    .provider-icon-groq { background: #feeee9; color: #f55036; }
+
+    /* ── Toggle / Switch ─────────────────────────────────────── */
+    .toggle-wrap {
+      background: var(--canvas);
+      border: 1px solid var(--hairline);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .toggle-wrap:hover { border-color: var(--hairline-strong); }
+    .toggle-track {
+      width: 36px; height: 20px;
+      border-radius: 9999px;
+      background: var(--hairline);
+      position: relative;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .toggle-track.on { background: var(--ink); }
+    .toggle-thumb {
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      transition: transform 0.2s;
+    }
+    .toggle-track.on .toggle-thumb { transform: translateX(16px); }
+
+    /* ── Drop Zone ───────────────────────────────────────────── */
+    .drop-zone {
+      border: 1.5px dashed var(--hairline);
+      border-radius: 8px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: var(--canvas-soft);
+    }
+    .drop-zone:hover, .drop-zone.dz-active {
+      border-color: var(--ink);
+      background: rgba(23,23,23,0.02);
+    }
+
+    /* ── Mode Tabs ───────────────────────────────────────────── */
+    .mode-tabs {
+      display: flex;
+      background: var(--canvas-soft);
+      border: 1px solid var(--hairline);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--body);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: center;
+    }
+    .mode-tab:hover:not(.active) { color: var(--ink); }
+    .mode-tab.active {
+      background: var(--canvas);
+      color: var(--ink);
+      font-weight: 500;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px rgba(0,0,0,0.04);
+    }
+
+    /* ── Score rings ─────────────────────────────────────────── */
+    .ring-track { transition: stroke-dasharray 1.4s cubic-bezier(0.34, 1.2, 0.64, 1); }
+    .score-good { color: var(--score-good); }
+    .score-warn { color: var(--score-warn); }
+    .score-bad  { color: var(--score-bad); }
+
+    /* ── Info / Warning Banners ──────────────────────────────── */
+    .info-band {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #1d4ed8;
+      display: flex;
+      gap: 10px;
+    }
+    .warn-band {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #92400e;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .error-band {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+
+    /* ── Data Table ──────────────────────────────────────────── */
+    .eval-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .eval-table th {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--mute);
+      border-bottom: 1px solid var(--hairline);
+      padding: 10px 14px;
+      white-space: nowrap;
+      text-align: center;
+      background: var(--canvas-soft);
+    }
+    .eval-table th:first-child, .eval-table th:nth-child(2) { text-align: left; }
+    .eval-table td {
+      border-bottom: 1px solid var(--hairline);
+      padding: 10px 14px;
+      font-size: 13px;
+      text-align: center;
+      color: var(--body);
+      vertical-align: middle;
+    }
+    .eval-table td:first-child, .eval-table td:nth-child(2) { text-align: left; }
+    .eval-table tbody tr.data-row { cursor: pointer; }
+    .eval-table tbody tr.data-row:hover td { background: var(--canvas-soft); }
+    .eval-table tbody tr.reason-row td { background: #fafafa; }
+
+    .reason-card {
+      background: var(--canvas);
+      border: 1px solid var(--hairline);
+      border-left: 3px solid var(--ink);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--body);
+      line-height: 1.6;
+    }
+
+    /* ── Loading Spinner ─────────────────────────────────────── */
+    .spin { animation: spin-anim 0.8s linear infinite; }
+    @keyframes spin-anim { to { transform: rotate(360deg); } }
+
+    /* ── Progress bar ────────────────────────────────────────── */
+    .progress-fill { transition: width 0.6s ease; }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateX(110%); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .toast-in { animation: toast-in 0.25s ease forwards; }
+
+    /* ── Page transitions ────────────────────────────────────── */
+    @keyframes page-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .page-enter { animation: page-in 0.25s ease; }
+
+    /* ── Scrollbar ───────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--hairline-strong); }
+
+    /* ── Dataset row hover actions ──────────────────────────── */
+    .dataset-row .row-actions { opacity: 0; transition: opacity 0.15s; }
+    .dataset-row:hover .row-actions { opacity: 1; }
+    .dataset-row:hover { background: var(--canvas-soft); }
+
+    /* ── Section divider ─────────────────────────────────────── */
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--mute);
+    }
+
+    /* ── Misc helpers ────────────────────────────────────────── */
+    .text-ink    { color: var(--ink); }
+    .text-body   { color: var(--body); }
+    .text-mute   { color: var(--mute); }
+    .text-link   { color: var(--link); }
+
+    @media (max-width: 640px) {
+      .nav-tabs { display: none; }
+      .mobile-nav-tabs { display: flex !important; }
+      .step-page-inner { padding: 28px 16px 64px !important; }
+    }
+
+    /* ── Sidebar ─────────────────────────────────────────────── */
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
+      padding-top: 64px;
+    }
+    .sidebar {
+      width: 240px;
+      flex-shrink: 0;
+      background: var(--canvas);
+      border-right: 1px solid var(--hairline);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 64px;
+      left: 0;
+      bottom: 0;
+      overflow-y: auto;
+      z-index: 40;
+      transition: transform 0.25s ease;
+    }
+    .sidebar-collapsed { transform: translateX(-240px); }
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--hairline);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .session-item {
+      padding: 10px 14px;
+      cursor: pointer;
+      border-radius: 6px;
+      margin: 2px 8px;
+      transition: background 0.15s;
+      border: 1px solid transparent;
+    }
+    .session-item:hover { background: var(--canvas-soft); border-color: var(--hairline); }
+    .session-item.active { background: var(--canvas-soft-2); border-color: var(--hairline); }
+    .session-delete {
+      opacity: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--mute);
+      font-size: 12px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: opacity 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .session-item:hover .session-delete { opacity: 1; }
+    .session-delete:hover { color: var(--error); }
+    .main-content {
+      flex: 1;
+      min-width: 0;
+      transition: margin-left 0.25s ease;
+    }
+    @media (min-width: 769px) {
+      .main-content { margin-left: 240px; }
+      .main-content.sidebar-hidden { margin-left: 0; }
+      .sidebar { transform: translateX(0); }
+      .sidebar.collapsed { transform: translateX(-240px); }
+    }
+    @media (max-width: 768px) {
+      .sidebar { transform: translateX(-240px); }
+      .sidebar.open { transform: translateX(0); }
+      .main-content { margin-left: 0; }
+    }
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.3);
+      z-index: 39;
+    }
+    @media (max-width: 768px) {
+      .sidebar-overlay { display: block; }
+    }
+
+    /* ── Judge chip ──────────────────────────────────────────── */
+    .judge-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--canvas-soft);
+      border: 1px solid var(--hairline);
+      border-radius: 9999px;
+      padding: 3px 10px 3px 6px;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--body);
+      max-width: 220px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .judge-chip:hover { border-color: var(--hairline-strong); background: var(--canvas); }
+    .judge-chip-provider { font-weight: 600; color: var(--ink); flex-shrink: 0; }
+    .judge-chip-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mute); }
+
+    /* ── Config popover ──────────────────────────────────────── */
+    .config-popover {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      width: 320px;
+      background: var(--canvas);
+      border: 1px solid var(--hairline);
+      border-radius: 10px;
+      box-shadow: 0px 4px 6px rgba(0,0,0,0.04), 0px 12px 24px -4px rgba(0,0,0,0.10);
+      padding: 16px;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .popover-arrow {
+      position: absolute;
+      top: -5px;
+      right: 20px;
+      width: 10px; height: 10px;
+      background: var(--canvas);
+      border-left: 1px solid var(--hairline);
+      border-top: 1px solid var(--hairline);
+      transform: rotate(45deg);
+    }
+    .provider-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1.5px solid var(--hairline);
+      background: var(--canvas);
+      transition: all 0.15s;
+    }
+    .provider-pill:hover { border-color: var(--hairline-strong); }
+    .provider-pill.active-gemini      { border-color: #4285f4; background: #e8f0fe; color: #1a56b0; }
+    .provider-pill.active-groq        { border-color: #f55036; background: #feeee9; color: #b83c27; }
+    .provider-pill.active-openrouter  { border-color: #7c3aed; background: #f5f3ff; color: #5b21b6; }
+  </style>
+</head>
+
+<body x-data="app()" x-cloak>
+
+  <!-- ═══ TOASTS ════════════════════════════════════════════════════ -->
+  <div class="fixed top-4 right-4 z-[999] flex flex-col gap-2 w-72 max-w-[calc(100vw-2rem)]" aria-live="polite">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="toast-in flex items-start gap-2.5 px-4 py-3 rounded-lg text-sm border"
+           style="background: var(--canvas); box-shadow: var(--shadow-l4);"
+           :class="{
+             'border-green-200 text-green-800': t.type==='success',
+             'border-red-200 text-red-800':     t.type==='error',
+             'border-amber-200 text-amber-800': t.type==='warn',
+             'border-blue-200 text-blue-800':   t.type==='info',
+           }">
+        <span class="flex-shrink-0 font-bold text-sm leading-none mt-0.5"
+              x-text="t.type==='success'?'✓':t.type==='error'?'✕':t.type==='warn'?'!':'i'"></span>
+        <span class="flex-1 leading-snug text-xs" x-text="t.msg"></span>
+        <button @click="toasts=toasts.filter(x=>x.id!==t.id)"
+                class="opacity-40 hover:opacity-100 transition-opacity text-xs flex-shrink-0 leading-none">✕</button>
+      </div>
+    </template>
+  </div>
+
+  <!-- ═══ NAVBAR ════════════════════════════════════════════════════ -->
+  <nav class="topnav" @click.outside="configOpen=false">
+    <div class="nav-inner">
+
+      <!-- Left: hamburger + logo -->
+      <div class="flex items-center gap-3 flex-shrink-0">
+        <button @click="sidebarOpen=!sidebarOpen"
+                class="btn-nav-ghost" title="Session history"
+                style="padding: 0 8px;">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2 3h10M2 7h10M2 11h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <a href="#" class="nav-logo" @click.prevent="page='home'">
+          <div class="nav-logo-mark">RE</div>
+          <span class="nav-wordmark">RAGEval</span>
+        </a>
+      </div>
+
+      <!-- Right: page tabs + judge chip -->
+      <div class="flex items-center gap-3 flex-shrink-0">
+
+        <!-- Page tabs (minimal, no pill wrapper) -->
+        <div class="hidden sm:flex items-center gap-1">
+          <button class="nav-tab" :class="page==='home'?'active':''" @click="page='home'">Home</button>
+          <button class="nav-tab" :class="page==='evaluate'?'active':''" @click="page='evaluate'">Evaluate</button>
+          <button class="nav-tab" :class="page==='results'?'active':''" :disabled="!results"
+                  @click="results?page='results':null">Results</button>
+        </div>
+
+        <!-- Judge chip / No key — both open config popover -->
+        <div style="position: relative;">
+          <!-- Validated chip -->
+          <template x-if="keyValid===true">
+            <button class="judge-chip" @click="configOpen=!configOpen">
+              <span class="badge-dot badge-dot-green badge-dot-pulse"></span>
+              <span class="judge-chip-provider" x-text="currentProvider.name"></span>
+              <span class="judge-chip-model" x-text="judgeModel"></span>
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style="flex-shrink:0; margin-left:2px; color:var(--mute)">
+                <path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </template>
+          <!-- No key badge -->
+          <template x-if="keyValid!==true">
+            <button class="badge" @click="configOpen=!configOpen"
+                    style="cursor:pointer; transition: border-color 0.15s;"
+                    onmouseover="this.style.borderColor='var(--hairline-strong)'"
+                    onmouseout="this.style.borderColor=''">
+              <span class="badge-dot"></span>
+              <span>Configure judge</span>
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style="margin-left:2px; color:var(--mute)">
+                <path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </template>
+
+          <!-- Config popover -->
+          <div class="config-popover" x-show="configOpen" x-cloak @click.stop>
+            <div class="popover-arrow"></div>
+
+            <!-- Provider pills -->
+            <div>
+              <p style="font-size: 11px; font-weight: 500; color: var(--mute); margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.06em; font-family: 'JetBrains Mono', monospace;">Provider</p>
+              <div style="display: flex; gap: 6px;">
+                <template x-for="p in providers" :key="p.id">
+                  <button class="provider-pill"
+                          :class="provider===p.id?`active-${p.id}`:''"
+                          @click="selectProvider(p.id)"
+                          x-text="p.name"></button>
+                </template>
+              </div>
+            </div>
+
+            <!-- API Key input -->
+            <div>
+              <label style="display: block; font-size: 11px; font-weight: 500; color: var(--mute); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; font-family: 'JetBrains Mono', monospace;"
+                     x-text="currentProvider.name+' API Key'"></label>
+              <div style="display: flex; gap: 6px;">
+                <div style="position: relative; flex: 1; min-width: 0;">
+                  <input x-model="apiKey"
+                         :type="showKey?'text':'password'"
+                         :placeholder="currentProvider.placeholder"
+                         @input="keyValid=null;validationError=''"
+                         @keydown.enter="validateAndSave()"
+                         class="inp inp-mono"
+                         style="padding-right: 40px; height: 36px; font-size: 12px;"/>
+                  <button @click="showKey=!showKey"
+                          style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+                                 color: var(--mute); font-size: 10px; background: none; border: none;
+                                 cursor: pointer; font-family: 'JetBrains Mono', monospace;"
+                          x-text="showKey?'hide':'show'"></button>
+                </div>
+                <!-- Single ✓ save button -->
+                <button @click="validateAndSave()"
+                        :disabled="!apiKey||validating"
+                        class="btn-action"
+                        style="flex-shrink: 0; height: 36px; padding: 0 12px;"
+                        :style="keyValid===true?'border-color:#bbf7d0;color:var(--score-good);':''">
+                  <span x-show="validating" class="spin" style="display:inline-block;width:10px;height:10px;border:1.5px solid var(--hairline-strong);border-top-color:var(--ink);border-radius:50%;"></span>
+                  <span x-show="!validating" x-text="keyValid===true?'✓ Saved':'✓ Save'"></span>
+                </button>
+              </div>
+              <div style="margin-top: 6px; font-size: 11px; min-height: 16px;">
+                <template x-if="keyValid===true">
+                  <span style="color: var(--score-good);">Key validated and saved</span>
+                </template>
+                <template x-if="keyValid===false">
+                  <span style="color: var(--error);" x-text="validationError||'Invalid key'"></span>
+                </template>
+              </div>
+            </div>
+
+            <!-- Model select -->
+            <div>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <label style="font-size: 11px; font-weight: 500; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; font-family: 'JetBrains Mono', monospace;">Model</label>
+                <template x-if="provider==='groq'||provider==='openrouter'">
+                  <button @click="provider==='groq'?fetchGroqModels():fetchOpenRouterModels()"
+                          :disabled="!apiKey||groqModelsLoading"
+                          style="font-size: 10px; color: var(--link); background: none; border: none; cursor: pointer; padding: 0; font-family: 'JetBrains Mono', monospace;"
+                          x-text="groqModelsLoading?'Loading…':groqModelsFetched?'↻ Refresh':'↓ Fetch models'"></button>
+                </template>
+              </div>
+              <select x-model="judgeModel" class="inp" style="height: 36px; font-size: 12px;">
+                <template x-for="m in currentProvider.models" :key="m">
+                  <option :value="m" x-text="m"></option>
+                </template>
+              </select>
+            </div>
+
+            <!-- Frameworks -->
+            <div style="display: flex; gap: 8px; padding-top: 4px; border-top: 1px solid var(--hairline);">
+              <label style="flex:1; display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; color:var(--body);">
+                <div class="toggle-track" :class="useRagas?'on':''" style="width:28px;height:16px;flex-shrink:0;">
+                  <input type="checkbox" x-model="useRagas" class="sr-only"/>
+                  <div class="toggle-thumb" style="width:12px;height:12px;top:2px;left:2px;"></div>
+                </div>
+                RAGAS
+              </label>
+              <label style="flex:1; display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; color:var(--body);">
+                <div class="toggle-track" :class="useDeepeval?'on':''" style="width:28px;height:16px;flex-shrink:0;">
+                  <input type="checkbox" x-model="useDeepeval" class="sr-only"/>
+                  <div class="toggle-thumb" style="width:12px;height:12px;top:2px;left:2px;"></div>
+                </div>
+                DeepEval
+              </label>
+            </div>
+
+            <!-- Go evaluate CTA -->
+            <button @click="configOpen=false;page='evaluate';step=keyValid===true?2:1"
+                    class="btn-primary" style="width:100%;justify-content:center;padding:9px;font-size:13px;">
+              <span x-show="keyValid===true">Go to evaluate →</span>
+              <span x-show="keyValid!==true">Save key first</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Mobile tabs (below nav) -->
+  <div class="mobile-nav-tabs hidden pt-16 px-4 pb-0 sticky top-0 z-40"
+       style="background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--hairline);">
+    <div class="mode-tabs">
+      <button class="mode-tab" :class="page==='home'?'active':''" @click="page='home'">Home</button>
+      <button class="mode-tab" :class="page==='evaluate'?'active':''" @click="page='evaluate'">Evaluate</button>
+      <button class="mode-tab" :class="page==='results'?'active':''" :disabled="!results"
+              @click="results?page='results':null">Results</button>
+    </div>
+  </div>
+
+  <!-- ═══ SIDEBAR OVERLAY (mobile) ════════════════════════════════════ -->
+  <div class="sidebar-overlay" x-show="sidebarOpen && window.innerWidth<768" @click="sidebarOpen=false" x-cloak></div>
+
+  <!-- ═══ APP SHELL ════════════════════════════════════════════════════ -->
+  <div class="app-shell">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" :class="sidebarOpen ? (window.innerWidth>=768 ? '' : 'open') : (window.innerWidth>=768 ? 'collapsed' : '')">
+    <div class="sidebar-header">
+      <span style="font-size: 12px; font-weight: 600; color: var(--ink); font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.06em;">Sessions</span>
+      <button @click="newRun()" class="btn-nav" style="font-size: 11px; height: 24px; padding: 0 8px; gap: 4px;">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <path d="M5 1v8M1 5h8" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        New
+      </button>
+    </div>
+
+    <div style="padding: 8px 0; flex: 1; overflow-y: auto;">
+      <template x-if="sessions.length===0">
+        <div style="padding: 24px 16px; text-align: center;">
+          <p style="font-size: 12px; color: var(--mute); line-height: 1.6; margin: 0;">No saved sessions yet. Complete an evaluation to save it here.</p>
+        </div>
+      </template>
+      <template x-for="s in sessions" :key="s.id">
+        <div class="session-item" :class="activeSessionId===s.id?'active':''"
+             @click="loadSession(s.id)">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 6px;">
+            <div style="min-width: 0; flex: 1;">
+              <p style="font-size: 12px; font-weight: 500; color: var(--ink); margin: 0 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                 x-text="s.label"></p>
+              <p style="font-size: 10px; color: var(--mute); margin: 0; font-family: 'JetBrains Mono', monospace;"
+                 x-text="s.provider+' · '+s.sampleCount+'s'"></p>
+              <p style="font-size: 10px; color: var(--mute); margin: 2px 0 0; font-family: 'JetBrains Mono', monospace;"
+                 x-text="formatDate(s.createdAt)"></p>
+            </div>
+            <button class="session-delete" @click.stop="deleteSession(s.id)" title="Delete">✕</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </aside>
+
+  <!-- ── Main content ── -->
+  <div class="main-content" :class="!sidebarOpen&&window.innerWidth>=768?'sidebar-hidden':''" style="min-height: calc(100vh - 64px);">
+
+  <!-- ═══ MAIN ═══════════════════════════════════════════════════════ -->
+  <main style="min-height: 100vh;">
+
+    <!-- ════════════════════════════════════════════════════════════
+         HOME PAGE
+    ═════════════════════════════════════════════════════════════ -->
+    <section x-show="page==='home'" class="page-enter">
+
+      <!-- Hero band -->
+      <div class="hero-mesh" style="background: var(--canvas-soft); padding: 96px 24px;">
+        <div style="max-width: 720px; margin: 0 auto; text-align: center;">
+
+          <!-- Eyebrow -->
+          <div style="margin-bottom: 24px;">
+            <span class="badge">
+              <span class="badge-dot badge-dot-green badge-dot-pulse"></span>
+              RAGAS + DeepEval · Bring your own judge model
+            </span>
+          </div>
+
+          <!-- H1 -->
+          <h1 style="
+            font-size: clamp(36px, 5vw, 52px);
+            font-weight: 600;
+            line-height: 1.05;
+            letter-spacing: -2.4px;
+            color: var(--ink);
+            margin: 0 0 20px;
+          ">Evaluate any RAG pipeline.</h1>
+
+          <!-- Subheading -->
+          <p style="
+            font-size: 18px;
+            font-weight: 400;
+            line-height: 28px;
+            color: var(--body);
+            max-width: 480px;
+            margin: 0 auto 36px;
+          ">Score faithfulness, hallucination, relevancy and more. Upload pre-generated RAG answers and get structured results in minutes.</p>
+
+          <!-- CTAs -->
+          <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+            <button @click="page='evaluate'" class="btn-primary" style="font-size: 15px; padding: 12px 24px;">
+              Start evaluating &rarr;
+            </button>
+            <button @click="page='evaluate';step=2;loadSample()" class="btn-secondary" style="font-size: 15px; padding: 12px 24px;">
+              Try sample dataset
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature cards -->
+      <div style="max-width: 1100px; margin: 0 auto; padding: 64px 24px 0;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 64px;">
+
+          <!-- RAGAS -->
+          <div class="card card-hover">
+            <div style="
+              width: 36px; height: 36px; border-radius: 8px;
+              background: #eff6ff; border: 1px solid #bfdbfe;
+              display: flex; align-items: center; justify-content: center;
+              margin-bottom: 16px;
+            ">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 2L14 5.5V10.5L8 14L2 10.5V5.5L8 2Z" stroke="#1d4ed8" stroke-width="1.5" stroke-linejoin="round"/>
+                <circle cx="8" cy="8" r="2" fill="#1d4ed8"/>
+              </svg>
+            </div>
+            <h3 style="font-size: 15px; font-weight: 600; color: var(--ink); margin: 0 0 6px; letter-spacing: -0.3px;">RAGAS metrics</h3>
+            <p style="font-size: 13px; color: var(--body); margin: 0 0 8px; line-height: 1.6;">Faithfulness · Answer Relevancy · Context Precision &amp; Recall</p>
+            <p style="font-size: 12px; color: var(--mute); line-height: 1.6; margin: 0;">Reference-based framework. Compares output against ground truth and retrieved contexts to surface retrieval gaps.</p>
+          </div>
+
+          <!-- DeepEval -->
+          <div class="card card-hover">
+            <div style="
+              width: 36px; height: 36px; border-radius: 8px;
+              background: #f5f3ff; border: 1px solid #ddd6fe;
+              display: flex; align-items: center; justify-content: center;
+              margin-bottom: 16px;
+            ">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6" stroke="#7c3aed" stroke-width="1.5"/>
+                <path d="M5 8l2 2 4-4" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3 style="font-size: 15px; font-weight: 600; color: var(--ink); margin: 0 0 6px; letter-spacing: -0.3px;">DeepEval scores</h3>
+            <p style="font-size: 13px; color: var(--body); margin: 0 0 8px; line-height: 1.6;">Hallucination · Faithfulness · Relevancy · Contextual Relevancy</p>
+            <p style="font-size: 12px; color: var(--mute); line-height: 1.6; margin: 0;">LLM-as-a-judge. Returns a score <em>and</em> written reason per metric so you know exactly why a sample failed.</p>
+          </div>
+
+          <!-- Judge model -->
+          <div class="card card-hover">
+            <div style="
+              width: 36px; height: 36px; border-radius: 8px;
+              background: #f0fdf4; border: 1px solid #bbf7d0;
+              display: flex; align-items: center; justify-content: center;
+              margin-bottom: 16px;
+            ">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="3" y="2" width="10" height="12" rx="2" stroke="#16a34a" stroke-width="1.5"/>
+                <path d="M6 6h4M6 9h4M6 12h2" stroke="#16a34a" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 style="font-size: 15px; font-weight: 600; color: var(--ink); margin: 0 0 6px; letter-spacing: -0.3px;">Your judge model</h3>
+            <p style="font-size: 13px; color: var(--body); margin: 0 0 8px; line-height: 1.6;">Gemini Flash or any Groq-hosted model. Key never stored.</p>
+            <p style="font-size: 12px; color: var(--mute); line-height: 1.6; margin: 0;">The LLM acts as the evaluator — your RAG pipeline generates the answers externally.</p>
+          </div>
+        </div>
+
+        <!-- How it works -->
+        <div class="card-soft" style="margin-bottom: 16px;">
+          <h2 style="font-size: 13px; font-weight: 600; color: var(--body); margin: 0 0 24px; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.06em;">How it works</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px;">
+            <div style="display: flex; gap: 14px;">
+              <div style="
+                width: 28px; height: 28px; border-radius: 50%;
+                background: var(--ink); color: white;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
+                font-family: 'JetBrains Mono', monospace;
+              ">1</div>
+              <div>
+                <p style="font-size: 14px; font-weight: 600; color: var(--ink); margin: 0 0 4px;">Pick a judge LLM</p>
+                <p style="font-size: 12px; color: var(--mute); line-height: 1.6; margin: 0;">Enter your Gemini or Groq API key. Used only as a scorer — never generates answers.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 14px;">
+              <div style="
+                width: 28px; height: 28px; border-radius: 50%;
+                background: var(--ink); color: white;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
+                font-family: 'JetBrains Mono', monospace;
+              ">2</div>
+              <div>
+                <p style="font-size: 14px; font-weight: 600; color: var(--ink); margin: 0 0 4px;">Upload RAG outputs</p>
+                <p style="font-size: 12px; color: var(--mute); line-height: 1.6; margin: 0;">Provide pre-generated answers from your RAG system — questions, contexts, ground truths.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 14px;">
+              <div style="
+                width: 28px; height: 28px; border-radius: 50%;
+                background: var(--ink); color: white;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
+                font-family: 'JetBrains Mono', monospace;
+              ">3</div>
+              <div>
+                <p style="font-size: 14px; font-weight: 600; color: var(--ink); margin: 0 0 4px;">Get scored results</p>
+                <p style="font-size: 12px; color: var(--mute); line-height: 1.6; margin: 0;">RAGAS + DeepEval compute 8 metrics. DeepEval explains every score so you know what to fix.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- What gets measured -->
+        <div class="card" style="margin-bottom: 64px;">
+          <h2 style="font-size: 13px; font-weight: 600; color: var(--body); margin: 0 0 20px; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.06em;">What gets measured</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px;">
+            <template x-for="m in metrics" :key="m.name">
+              <div style="
+                display: flex; align-items: flex-start; gap: 12px;
+                padding: 12px; border-radius: 6px;
+                background: var(--canvas-soft); border: 1px solid var(--hairline);
+              ">
+                <div style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 5px;"
+                     :style="`background:${m.color}`"></div>
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 2px;">
+                    <span style="font-size: 13px; font-weight: 500; color: var(--ink);" x-text="m.name"></span>
+                    <span style="font-size: 10px; font-family: 'JetBrains Mono', monospace; color: var(--mute);
+                                 background: var(--canvas); border: 1px solid var(--hairline); border-radius: 4px;
+                                 padding: 1px 5px;" x-text="m.fw"></span>
+                  </div>
+                  <p style="font-size: 11px; color: var(--mute); margin: 0; line-height: 1.5;" x-text="m.desc"></p>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         EVALUATE PAGE
+    ═════════════════════════════════════════════════════════════ -->
+    <section x-show="page==='evaluate'" class="page-enter">
+      <div class="step-page-inner" style="max-width: 480px; margin: 0 auto; padding: 40px 20px 80px;">
+
+        <!-- Stepper -->
+        <div class="stepper" style="margin-bottom: 32px;">
+          <template x-for="(s, i) in steps" :key="i">
+            <div style="display: contents;">
+              <div class="step-item">
+                <div class="step-dot" :class="step > i+1 ? 'done' : step === i+1 ? 'active' : ''">
+                  <span x-show="step <= i+1" x-text="i+1"></span>
+                  <span x-show="step > i+1">&#10003;</span>
+                </div>
+                <span class="step-label" :class="step === i+1 ? 'active' : step > i+1 ? 'done' : ''" x-text="s"></span>
+              </div>
+              <div x-show="i < steps.length - 1" class="step-connector" :class="step > i+1 ? 'done' : ''"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- ══ STEP 1: Judge model ══ -->
+        <div x-show="step===1" class="page-enter" style="display:flex; flex-direction:column; gap:20px;">
+
+          <div>
+            <h2 style="font-size:20px; font-weight:600; letter-spacing:-0.5px; color:var(--ink); margin:0 0 2px;">Judge model</h2>
+            <p style="font-size:12px; color:var(--mute); margin:0;">Scores your RAG answers — no answers generated internally.</p>
+          </div>
+
+          <!-- Provider + key + model — flat, no outer box -->
+          <div style="display:flex; flex-direction:column; gap:16px;">
+
+            <!-- Provider -->
+            <div>
+              <p class="field-label">Provider</p>
+              <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                <template x-for="p in providers" :key="p.id">
+                  <button class="provider-pill" :class="provider===p.id?`active-${p.id}`:''" @click="selectProvider(p.id)" x-text="p.name"></button>
+                </template>
+              </div>
+            </div>
+
+            <!-- API key -->
+            <div>
+              <p class="field-label" x-text="currentProvider.name+' API key'"></p>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <div style="position:relative; flex:1; min-width:0;">
+                  <input x-model="apiKey" :type="showKey?'text':'password'" :placeholder="currentProvider.placeholder"
+                         @input="keyValid=null;validationError=''" @keydown.enter="validateAndSave()"
+                         class="inp inp-mono" style="padding-right:44px;"/>
+                  <button @click="showKey=!showKey"
+                          style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--mute);font-size:10px;background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;"
+                          x-text="showKey?'hide':'show'"></button>
+                </div>
+                <button @click="validateAndSave()" :disabled="!apiKey||validating" class="btn-action" style="flex-shrink:0; height:40px;"
+                        :style="keyValid===true?'border-color:#bbf7d0;color:var(--score-good);background:#f0fdf4;':''">
+                  <span x-show="validating" class="spin" style="display:inline-block;width:10px;height:10px;border:1.5px solid var(--hairline-strong);border-top-color:var(--ink);border-radius:50%;"></span>
+                  <span x-show="!validating" x-text="keyValid===true?'✓ Saved':'✓ Save'"></span>
+                </button>
+              </div>
+              <p style="margin:4px 0 0; font-size:11px; min-height:14px; font-family:'JetBrains Mono',monospace;">
+                <template x-if="keyValid===true"><span style="color:var(--score-good);">✓ Validated</span></template>
+                <template x-if="keyValid===false"><span style="color:var(--error);" x-text="validationError||'Invalid key'"></span></template>
+                <template x-if="keyValid===null&&apiKey"><span style="color:var(--mute);">Press Save to validate</span></template>
+              </p>
+            </div>
+
+            <!-- Model -->
+            <div>
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                <p class="field-label" style="margin:0;">Model</p>
+                <template x-if="provider==='groq'||provider==='openrouter'">
+                  <button @click="provider==='groq'?fetchGroqModels():fetchOpenRouterModels()" :disabled="!apiKey||groqModelsLoading"
+                          style="font-size:11px;color:var(--link);background:none;border:none;cursor:pointer;padding:0;font-family:'JetBrains Mono',monospace;"
+                          x-text="groqModelsLoading?'Loading…':groqModelsFetched?'⟳ Refresh':'↓ Fetch models'"></button>
+                </template>
+              </div>
+              <select x-model="judgeModel" class="inp">
+                <template x-for="m in currentProvider.models" :key="m">
+                  <option :value="m" x-text="m"></option>
+                </template>
+              </select>
+            </div>
+          </div>
+
+          <!-- Divider -->
+          <div style="height:1px; background:var(--hairline);"></div>
+
+          <!-- Metrics -->
+          <div style="display:flex; flex-direction:column; gap:14px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <p style="font-size:13px; font-weight:600; color:var(--ink); margin:0;">Metrics</p>
+              <span style="font-size:11px; color:var(--mute); font-family:'JetBrains Mono',monospace;" x-text="selectedMetricCount+' selected'"></span>
+            </div>
+
+            <!-- RAGAS -->
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <span style="width:5px;height:5px;border-radius:50%;background:#4285f4;flex-shrink:0;"></span>
+                <span style="font-size:11px; font-weight:600; color:var(--ink); letter-spacing:0.03em;">RAGAS</span>
+                <span style="font-size:10px; color:var(--mute); font-family:'JetBrains Mono',monospace;">reference-based</span>
+                <div style="flex:1;height:1px;background:var(--hairline);"></div>
+                <button @click="toggleAllRagas()" style="font-size:10px;color:var(--link);background:none;border:none;cursor:pointer;padding:0;white-space:nowrap;"
+                        x-text="ragasMetrics.every(m=>m.enabled)?'Deselect all':'Select all'"></button>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:5px;">
+                <template x-for="m in ragasMetrics" :key="m.key">
+                  <label class="metric-chip" :class="m.enabled?'metric-chip-ragas':''">
+                    <input type="checkbox" x-model="m.enabled" class="sr-only"/>
+                    <div class="metric-chip-box" :style="m.enabled?'border-color:#4285f4;background:#4285f4;':'border-color:var(--hairline);background:var(--canvas);'">
+                      <svg x-show="m.enabled" width="8" height="8" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.5l2 2 4-4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                    <div>
+                      <p style="font-size:12px;font-weight:500;color:var(--ink);margin:0;" x-text="m.label"></p>
+                      <p style="font-size:10px;color:var(--mute);margin:0;line-height:1.3;" x-text="m.desc"></p>
+                    </div>
+                  </label>
+                </template>
+              </div>
+            </div>
+
+            <!-- DeepEval -->
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <span style="width:5px;height:5px;border-radius:50%;background:#7c3aed;flex-shrink:0;"></span>
+                <span style="font-size:11px; font-weight:600; color:var(--ink); letter-spacing:0.03em;">DeepEval</span>
+                <span style="font-size:10px; color:var(--mute); font-family:'JetBrains Mono',monospace;">LLM-as-a-judge · with reasons</span>
+                <div style="flex:1;height:1px;background:var(--hairline);"></div>
+                <button @click="toggleAllDeepeval()" style="font-size:10px;color:var(--link);background:none;border:none;cursor:pointer;padding:0;white-space:nowrap;"
+                        x-text="deepevalMetrics.every(m=>m.enabled)?'Deselect all':'Select all'"></button>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:5px;">
+                <template x-for="m in deepevalMetrics" :key="m.key">
+                  <label class="metric-chip" :class="m.enabled?'metric-chip-deep':''">
+                    <input type="checkbox" x-model="m.enabled" class="sr-only"/>
+                    <div class="metric-chip-box" :style="m.enabled?'border-color:#7c3aed;background:#7c3aed;':'border-color:var(--hairline);background:var(--canvas);'">
+                      <svg x-show="m.enabled" width="8" height="8" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.5l2 2 4-4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                    <div>
+                      <p style="font-size:12px;font-weight:500;color:var(--ink);margin:0;" x-text="m.label"></p>
+                      <p style="font-size:10px;color:var(--mute);margin:0;line-height:1.3;" x-text="m.desc"></p>
+                    </div>
+                  </label>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <button @click="step=2" :disabled="!apiKey||keyValid!==true||selectedMetricCount===0" class="btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:14px;margin-top:4px;">
+            <span x-show="!apiKey">Enter an API key to continue</span>
+            <span x-show="apiKey&&keyValid!==true">Save your key first</span>
+            <span x-show="keyValid===true&&selectedMetricCount===0">Select at least one metric</span>
+            <span x-show="keyValid===true&&selectedMetricCount>0">Next: Dataset →</span>
+          </button>
+        </div>
+
+        <!-- ══ STEP 2: Dataset ══ -->
+        <div x-show="step===2" class="page-enter" style="display:flex; flex-direction:column; gap:16px;">
+
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+            <div>
+              <h2 style="font-size:20px; font-weight:600; letter-spacing:-0.5px; color:var(--ink); margin:0 0 2px;">Dataset</h2>
+              <p style="font-size:12px; color:var(--mute); margin:0;">"answer" = your RAG system output being evaluated.</p>
+            </div>
+            <button @click="step=1" style="font-size:11px;color:var(--mute);background:none;border:none;cursor:pointer;flex-shrink:0;margin-top:4px;padding:0;font-family:'JetBrains Mono',monospace;"
+                    onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">← Back</button>
+          </div>
+
+          <!-- Mode tabs -->
+          <div class="mode-tabs">
+            <template x-for="m in [{id:'upload',label:'Upload JSON'},{id:'sample',label:'Sample'},{id:'manual',label:'Manual'}]" :key="m.id">
+              <button @click="inputMode=m.id" class="mode-tab" :class="inputMode===m.id?'active':''" x-text="m.label"></button>
+            </template>
+          </div>
+
+          <!-- Upload -->
+          <div x-show="inputMode==='upload'">
+            <div class="drop-zone"
+                 @dragover.prevent="$el.classList.add('dz-active')"
+                 @dragleave="$el.classList.remove('dz-active')"
+                 @drop.prevent="handleDrop($event);$el.classList.remove('dz-active')"
+                 @click="$refs.fileInput.click()">
+              <svg width="20" height="20" viewBox="0 0 18 18" fill="none" style="margin:0 auto 10px; display:block; color:var(--mute);">
+                <path d="M9 2v10M5 6l4-4 4 4M3 14h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <p style="font-size:13px; font-weight:500; color:var(--ink); margin:0 0 3px;">Drop JSON file here</p>
+              <p style="font-size:11px; color:var(--mute); margin:0;">or click to browse · <code class="inp-mono" style="font-size:10px;">[{question, answer, contexts, ground_truth}]</code></p>
+              <input x-ref="fileInput" type="file" accept=".json" class="hidden" @change="handleFile($event)"/>
+            </div>
+          </div>
+
+          <!-- Sample -->
+          <div x-show="inputMode==='sample'">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border:1px solid var(--hairline); border-radius:8px; background:var(--canvas);">
+              <div>
+                <p style="font-size:13px;font-weight:600;color:var(--ink);margin:0 0 2px;">5 RAG QA pairs</p>
+                <p style="font-size:11px;color:var(--mute);margin:0;">Questions, contexts, ground truths &amp; example answers.</p>
+              </div>
+              <button @click="loadSample()" class="btn-secondary" style="font-size:12px;padding:7px 14px;flex-shrink:0;">Load</button>
+            </div>
+          </div>
+
+          <!-- Manual -->
+          <div x-show="inputMode==='manual'" style="display:flex; flex-direction:column; gap:10px;">
+            <div>
+              <label class="field-label">Question</label>
+              <textarea x-model="manual.question" rows="2" placeholder="What is RAG?" class="inp"></textarea>
+            </div>
+            <div>
+              <label class="field-label">RAG answer</label>
+              <textarea x-model="manual.answer" rows="2" placeholder="Your RAG system's output…" class="inp"></textarea>
+            </div>
+            <div>
+              <label class="field-label">Contexts <span style="color:var(--mute);font-weight:400;">(one per line)</span></label>
+              <textarea x-model="manual.contexts" rows="3" placeholder="Context chunk 1…&#10;Context chunk 2…" class="inp inp-mono"></textarea>
+            </div>
+            <div>
+              <label class="field-label">Ground truth</label>
+              <textarea x-model="manual.ground_truth" rows="2" placeholder="The correct expected answer…" class="inp"></textarea>
+            </div>
+            <div x-show="manualError" style="font-size:11px;color:var(--error);display:flex;align-items:center;gap:5px;">
+              <span>✕</span><span x-text="manualError"></span>
+            </div>
+            <button @click="addManual()" class="btn-action" style="align-self:flex-start;">+ Add entry</button>
+          </div>
+
+          <!-- Dataset preview -->
+          <div x-show="dataset.length>0" style="border:1px solid var(--hairline); border-radius:8px; overflow:hidden; background:var(--canvas);">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--hairline); background:var(--canvas-soft);">
+              <span style="font-size:12px; color:var(--body);">
+                <strong style="color:var(--ink);" x-text="dataset.length"></strong> sample(s)
+                <span x-show="editingIdx!==null" style="color:var(--link); margin-left:6px; font-size:11px;">— editing #<span x-text="editingIdx+1"></span></span>
+              </span>
+              <button @click="dataset=[];editingIdx=null" style="font-size:11px;color:var(--mute);background:none;border:none;cursor:pointer;padding:0;font-family:'JetBrains Mono',monospace;"
+                      onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='var(--mute)'">Clear all</button>
+            </div>
+            <div style="max-height:220px; overflow-y:auto;">
+              <template x-for="(item,i) in dataset" :key="i">
+                <div>
+                  <div x-show="editingIdx!==i" @click="openEdit(i)"
+                       style="display:flex; gap:10px; padding:9px 14px; border-bottom:1px solid var(--hairline); font-size:12px; cursor:pointer; position:relative;"
+                       class="dataset-row">
+                    <span class="inp-mono" style="color:var(--mute);width:18px;flex-shrink:0;font-size:11px;padding-top:1px;" x-text="(i+1)+'.'"></span>
+                    <div style="min-width:0; flex:1;">
+                      <p style="color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0 0 1px;font-weight:500;" x-text="item.question"></p>
+                      <p style="color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;margin:0;" x-text="item.answer"></p>
+                    </div>
+                    <div class="row-actions" style="display:flex;gap:3px;align-items:center;flex-shrink:0;">
+                      <button @click.stop="openEdit(i)" title="Edit"
+                              style="width:22px;height:22px;border-radius:4px;border:1px solid var(--hairline);background:var(--canvas);color:var(--body);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color 0.12s;"
+                              onmouseover="this.style.borderColor='var(--ink)'" onmouseout="this.style.borderColor='var(--hairline)'">
+                        <svg width="10" height="10" viewBox="0 0 11 11" fill="none"><path d="M7.5 1.5l2 2-5.5 5.5H2v-2L7.5 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </button>
+                      <button @click.stop="deleteDatasetItem(i)" title="Delete"
+                              style="width:22px;height:22px;border-radius:4px;border:1px solid var(--hairline);background:var(--canvas);color:var(--mute);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color 0.12s,color 0.12s;"
+                              onmouseover="this.style.borderColor='var(--error)';this.style.color='var(--error)'" onmouseout="this.style.borderColor='var(--hairline)';this.style.color='var(--mute)'">
+                        <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div x-show="editingIdx===i" style="padding:12px 14px; border-bottom:1px solid var(--hairline); background:var(--canvas-soft); display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                      <span style="font-size:11px;font-weight:600;color:var(--ink);font-family:'JetBrains Mono',monospace;">Sample #<span x-text="i+1"></span></span>
+                      <button @click="editingIdx=null" style="font-size:11px;color:var(--mute);background:none;border:none;cursor:pointer;padding:0;"
+                              onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">✕</button>
+                    </div>
+                    <div><label class="field-label-xs">Question</label><textarea x-model="dataset[i].question" rows="2" class="inp" style="font-size:12px;"></textarea></div>
+                    <div><label class="field-label-xs">Answer</label><textarea x-model="dataset[i].answer" rows="2" class="inp" style="font-size:12px;"></textarea></div>
+                    <div>
+                      <label class="field-label-xs">Contexts <span style="font-weight:400;text-transform:none;">(one per line)</span></label>
+                      <textarea x-model="editContextsStr" rows="2" class="inp inp-mono" style="font-size:11px;"
+                                @change="dataset[i].contexts=editContextsStr.split('\n').map(l=>l.trim()).filter(Boolean)"></textarea>
+                    </div>
+                    <div><label class="field-label-xs">Ground truth</label><textarea x-model="dataset[i].ground_truth" rows="2" class="inp" style="font-size:12px;"></textarea></div>
+                    <div style="display:flex;gap:6px;">
+                      <button @click="saveEdit(i)" class="btn-action" style="font-size:11px;padding:5px 10px;">✓ Save</button>
+                      <button @click="deleteDatasetItem(i)" class="btn-action" style="font-size:11px;padding:5px 10px;color:var(--error);border-color:#fecaca;">Delete</button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <button @click="step=3" :disabled="dataset.length===0" class="btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:14px;margin-top:4px;">
+            Next: Run →
+          </button>
+        </div>
+
+        <!-- ══ STEP 3: Run ══ -->
+        <div x-show="step===3" class="page-enter" style="display:flex; flex-direction:column; gap:16px;">
+
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+            <div>
+              <h2 style="font-size:20px; font-weight:600; letter-spacing:-0.5px; color:var(--ink); margin:0 0 2px;">Ready</h2>
+              <p style="font-size:12px; color:var(--mute); margin:0;">Click a card to edit that step.</p>
+            </div>
+            <button @click="step=2" style="font-size:11px;color:var(--mute);background:none;border:none;cursor:pointer;flex-shrink:0;margin-top:4px;padding:0;font-family:'JetBrains Mono',monospace;"
+                    onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--mute)'">← Back</button>
+          </div>
+
+          <!-- Config summary row -->
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(100px,1fr)); gap:6px;">
+            <template x-for="card in [
+              {label:'Provider', val: currentProvider.name, step: 1},
+              {label:'Model',    val: judgeModel,           step: 1},
+              {label:'Samples',  val: dataset.length+'',    step: 2},
+              {label:'Metrics',  val: selectedMetricCount+'', step: 1},
+            ]" :key="card.label">
+              <button @click="step=card.step;configOpen=false"
+                      style="text-align:left;border:1px solid var(--hairline);border-radius:7px;padding:10px 12px;background:var(--canvas);cursor:pointer;transition:border-color 0.15s,transform 0.15s;width:100%;"
+                      onmouseover="this.style.borderColor='var(--ink)';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='var(--hairline)';this.style.transform=''">
+                <p style="font-size:10px;color:var(--mute);margin:0 0 3px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:0.05em;" x-text="card.label"></p>
+                <p style="font-size:13px;font-weight:600;color:var(--ink);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="card.val"></p>
+              </button>
+            </template>
+          </div>
+
+          <!-- Estimate inline -->
+          <p style="font-size:12px; color:var(--mute); margin:0; font-family:'JetBrains Mono',monospace;"
+             x-text="estimatedLabel+' for '+dataset.length+' sample(s) · '+selectedMetricCount+' metric(s)'"></p>
+
+          <!-- Error -->
+          <div x-show="evalError" class="error-band">
+            <p style="font-size:12px;font-weight:600;color:var(--error);margin:0 0 3px;">Evaluation failed</p>
+            <p style="font-size:12px;color:#991b1b;line-height:1.5;margin:0;" x-text="evalError"></p>
+          </div>
+
+          <!-- Loading -->
+          <div x-show="loading" style="padding:28px 0; text-align:center;">
+            <div style="display:flex;justify-content:center;margin-bottom:16px;">
+              <div style="position:relative;width:36px;height:36px;">
+                <div style="position:absolute;inset:0;border-radius:50%;border:2px solid var(--hairline);"></div>
+                <div class="spin" style="position:absolute;inset:0;border-radius:50%;border:2px solid transparent;border-top-color:var(--ink);"></div>
+                <div style="animation:spin-anim 1.1s linear infinite reverse;position:absolute;inset:5px;border-radius:50%;border:2px solid transparent;border-top-color:var(--hairline-strong);"></div>
+              </div>
+            </div>
+            <p style="font-size:13px;font-weight:500;color:var(--ink);margin:0 0 3px;" x-text="loadingMsg"></p>
+            <p style="font-size:11px;color:var(--mute);margin:0 0 16px;">1–5 minutes depending on dataset size.</p>
+            <div style="width:100%;background:var(--hairline);border-radius:9999px;height:2px;overflow:hidden;margin-bottom:6px;">
+              <div class="progress-fill" style="height:100%;border-radius:9999px;background:var(--ink);" :style="`width:${progressPct}%`"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mute);font-family:'JetBrains Mono',monospace;">
+              <span x-text="Math.round(progressPct)+'%'"></span>
+              <span x-text="elapsedSecs+'s'"></span>
+            </div>
+          </div>
+
+          <!-- Run -->
+          <div x-show="!loading">
+            <button @click="runEvaluation()" class="btn-primary" style="width:100%;justify-content:center;padding:13px;font-size:15px;font-weight:600;">
+              Run evaluation →
+            </button>
+            <p style="text-align:center;font-size:10px;color:var(--mute);margin-top:8px;font-family:'JetBrains Mono',monospace;">Key used only for this request · never stored server-side.</p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         RESULTS PAGE
+    ═════════════════════════════════════════════════════════════ -->
+    <section x-show="page==='results'&&results" class="page-enter">
+      <div style="max-width: 1100px; margin: 0 auto; padding: 48px 24px 80px;">
+
+        <!-- Header -->
+        <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 40px;">
+          <div>
+            <h2 style="font-size: 32px; font-weight: 600; letter-spacing: -1.28px; color: var(--ink); margin: 0 0 6px;">Evaluation results.</h2>
+            <p style="font-size: 13px; color: var(--mute); margin: 0; font-family: 'JetBrains Mono', monospace;"
+               x-text="(results?.ragas?.length||results?.deepeval?.length||dataset.length)+' samples · '+currentProvider.name+' / '+judgeModel"></p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-shrink: 0;">
+            <button @click="exportCSV()" class="btn-secondary" style="font-size: 13px; padding: 8px 16px;">
+              &#8595; Export CSV
+            </button>
+            <button @click="newRun()"
+                    class="btn-primary" style="font-size: 13px; padding: 8px 16px;">
+              + New run
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Overall RAG Score ── -->
+        <div class="card" style="padding: 20px 24px; margin-bottom: 24px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+          <!-- Gauge -->
+          <div style="position: relative; width: 84px; height: 84px; flex-shrink: 0;">
+            <svg width="84" height="84" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="var(--hairline)" stroke-width="10"
+                      stroke-dasharray="188.5 251.3" stroke-dashoffset="-31.4" transform="rotate(-210 50 50)"/>
+              <circle cx="50" cy="50" r="40" fill="none"
+                      :stroke="overallScore>=70?'var(--score-good)':overallScore>=50?'var(--score-warn)':'var(--score-bad)'"
+                      stroke-width="10" stroke-linecap="round"
+                      :stroke-dasharray="`${overallScore*1.885} 251.3`"
+                      stroke-dashoffset="-31.4" transform="rotate(-210 50 50)"
+                      style="transition: stroke-dasharray 1.6s cubic-bezier(0.34,1.2,0.64,1);"/>
+            </svg>
+            <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 4px;">
+              <span class="inp-mono" style="font-size: 16px; font-weight: 700; line-height: 1;"
+                    :class="overallScore>=70?'score-good':overallScore>=50?'score-warn':'score-bad'"
+                    x-text="overallScore+'%'"></span>
+              <span style="font-size: 8px; color: var(--mute); font-family: 'JetBrains Mono', monospace; margin-top: 2px; letter-spacing: 0.04em;">ACCURACY</span>
+            </div>
+          </div>
+
+          <!-- Verdict -->
+          <div style="flex: 1; min-width: 160px;">
+            <p style="font-size: 17px; font-weight: 700; color: var(--ink); margin: 0 0 3px; letter-spacing: -0.4px;"
+               x-text="overallScore>=70?'RAG is performing well.':overallScore>=50?'RAG needs improvement.':'RAG needs significant work.'"></p>
+            <p style="font-size: 12px; color: var(--mute); margin: 0 0 10px; line-height: 1.5;"
+               x-text="passingMetrics+' of '+totalMetricsRun+' metrics passing · '+((results?.ragas?.length||results?.deepeval?.length||0))+' samples'"></p>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+              <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--body);">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--score-good);flex-shrink:0;"></span>
+                <span x-text="passingMetrics+' passing'"></span>
+              </span>
+              <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--body);">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--score-warn);flex-shrink:0;"></span>
+                <span x-text="borderlineMetrics+' borderline'"></span>
+              </span>
+              <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--body);">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--score-bad);flex-shrink:0;"></span>
+                <span x-text="failingMetrics+' failing'"></span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Stat pills -->
+          <div style="display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap;">
+            <div style="text-align:center; padding: 10px 16px; border-radius: 8px; background: var(--canvas-soft); border: 1px solid var(--hairline); min-width: 64px;">
+              <p class="inp-mono" style="font-size: 20px; font-weight: 700; color: var(--ink); margin: 0;" x-text="results?.ragas?.length||results?.deepeval?.length||0"></p>
+              <p style="font-size: 10px; color: var(--mute); margin: 2px 0 0; text-transform: uppercase; letter-spacing: 0.06em; font-family: 'JetBrains Mono', monospace;">Samples</p>
+            </div>
+            <div style="text-align:center; padding: 10px 16px; border-radius: 8px; background: var(--canvas-soft); border: 1px solid var(--hairline); min-width: 64px;">
+              <p class="inp-mono" style="font-size: 20px; font-weight: 700; color: var(--ink); margin: 0;" x-text="selectedMetricCount"></p>
+              <p style="font-size: 10px; color: var(--mute); margin: 2px 0 0; text-transform: uppercase; letter-spacing: 0.06em; font-family: 'JetBrains Mono', monospace;">Metrics</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bar chart: all metrics -->
+        <div class="card" style="margin-bottom: 24px;">
+          <p class="section-label" style="margin: 0 0 16px;">All metrics — average score</p>
+          <div id="barChart" class="plotly-fluid" style="min-height:200px;"></div>
+        </div>
+
+        <!-- Score legend -->
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 16px;
+                    background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: 6px;
+                    margin-bottom: 32px; font-size: 12px;">
+          <span style="color: var(--mute); font-family: 'JetBrains Mono', monospace; font-size: 11px;">LEGEND</span>
+          <span style="display: flex; align-items: center; gap: 6px; color: var(--body);">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--score-good); flex-shrink: 0;"></span>Pass (meets threshold)
+          </span>
+          <span style="display: flex; align-items: center; gap: 6px; color: var(--body);">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--score-warn); flex-shrink: 0;"></span>Borderline
+          </span>
+          <span style="display: flex; align-items: center; gap: 6px; color: var(--body);">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--score-bad); flex-shrink: 0;"></span>Fail
+          </span>
+          <span style="display: flex; align-items: center; gap: 6px; color: var(--mute); font-size: 11px;">
+            <span style="width: 10px; height: 2px; background: #6366f1; border-radius: 1px; flex-shrink: 0; border-top: 2px dotted #6366f1;"></span>threshold (lower-is-better)
+          </span>
+          <span style="display: flex; align-items: center; gap: 6px; color: var(--mute); font-size: 11px;">
+            <span style="width: 10px; height: 2px; background: #374151; border-radius: 1px; border-top: 2px dotted #374151;"></span>threshold (higher-is-better)
+          </span>
+        </div>
+
+        <!-- ── RAGAS ── -->
+        <template x-if="results&&results.ragas_summary">
+          <div style="margin-bottom: 40px;">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+              <span class="section-label">RAGAS</span>
+              <div style="flex: 1; height: 1px; background: var(--hairline);"></div>
+              <span style="font-size: 11px; color: var(--mute); font-family: 'JetBrains Mono', monospace;" x-text="ragas_entries.length+' metrics'"></span>
+            </div>
+
+            <!-- Score rings -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px;">
+              <template x-for="entry in ragas_entries" :key="entry[0]">
+                <div class="card card-hover" style="text-align: center; padding: 14px 10px;">
+                  <div style="position: relative; width: 56px; height: 56px; margin: 0 auto 10px;">
+                    <svg class="-rotate-90" style="width: 100%; height: 100%; transform: rotate(-90deg);" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="var(--hairline)" stroke-width="8"/>
+                      <circle cx="50" cy="50" r="40" fill="none"
+                              :stroke="ringColor(entry[1])"
+                              stroke-width="8" stroke-linecap="round"
+                              class="ring-track"
+                              :stroke-dasharray="`${entry[1]*251.3} 251.3`"/>
+                    </svg>
+                    <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+                      <span class="inp-mono" style="font-size: 14px; font-weight: 600;"
+                            :class="entry[1]>=.7?'score-good':entry[1]>=.5?'score-warn':'score-bad'"
+                            x-text="Number(entry[1]).toFixed(2)"></span>
+                    </div>
+                  </div>
+                  <p style="font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; font-family: 'JetBrains Mono', monospace;"
+                     x-text="entry[0].replace(/_/g,' ')"></p>
+                  <span style="font-size: 10px; padding: 2px 8px; border-radius: 9999px; border: 1px solid;"
+                        :class="entry[1]>=(thresholds[entry[0]]||.7)?
+                          'bg-green-50 border-green-200 text-green-700':
+                          'bg-amber-50 border-amber-200 text-amber-700'"
+                        x-text="entry[1]>=(thresholds[entry[0]]||.7)?'Pass':'Below'"></span>
+                </div>
+              </template>
+            </div>
+
+            <!-- Charts -->
+            <div class="card">
+              <p class="section-label" style="margin: 0 0 16px;">Metric radar</p>
+              <div id="radarChart" class="plotly-fluid" style="min-height:260px;"></div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ── DeepEval ── -->
+        <template x-if="results&&results.deepeval_summary">
+          <div style="margin-bottom: 40px;">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+              <span class="section-label">DeepEval</span>
+              <div style="flex: 1; height: 1px; background: var(--hairline);"></div>
+              <span style="font-size: 11px; color: var(--mute); font-family: 'JetBrains Mono', monospace;" x-text="deepeval_entries.length+' metrics'"></span>
+            </div>
+            <p style="font-size: 12px; color: var(--mute); margin: 0 0 16px; line-height: 1.6;">Click any row in the table below to see the written reason from the judge LLM.</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px;">
+              <template x-for="entry in deepeval_entries" :key="entry[0]">
+                <div class="card card-hover" style="text-align: center; padding: 14px 10px;">
+                  <div style="position: relative; width: 56px; height: 56px; margin: 0 auto 10px;">
+                    <svg style="width: 100%; height: 100%; transform: rotate(-90deg);" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="var(--hairline)" stroke-width="8"/>
+                      <circle cx="50" cy="50" r="40" fill="none"
+                              :stroke="ringColor(entry[1], ['deepeval_hallucination','deepeval_bias','deepeval_toxicity'].includes(entry[0]))"
+                              stroke-width="8" stroke-linecap="round"
+                              class="ring-track"
+                              :stroke-dasharray="`${entry[1]*251.3} 251.3`"/>
+                    </svg>
+                    <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+                      <span class="inp-mono" style="font-size: 14px; font-weight: 600;"
+                            :class="['deepeval_hallucination','deepeval_bias','deepeval_toxicity'].includes(entry[0])?(entry[1]<=.3?'score-good':entry[1]<=.6?'score-warn':'score-bad'):(entry[1]>=.7?'score-good':entry[1]>=.5?'score-warn':'score-bad')"
+                            x-text="Number(entry[1]).toFixed(2)"></span>
+                    </div>
+                  </div>
+                  <p style="font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; font-family: 'JetBrains Mono', monospace;"
+                     x-text="entry[0].replace('deepeval_','').replace(/_/g,' ')"></p>
+                  <span style="font-size: 10px; padding: 2px 8px; border-radius: 9999px; border: 1px solid;"
+                        :class="['deepeval_hallucination','deepeval_bias','deepeval_toxicity'].includes(entry[0])?
+                          (entry[1]<=.3?'bg-green-50 border-green-200 text-green-700':'bg-red-50 border-red-200 text-red-700'):
+                          (entry[1]>=.7?'bg-green-50 border-green-200 text-green-700':'bg-amber-50 border-amber-200 text-amber-700')"
+                        x-text="['deepeval_hallucination','deepeval_bias','deepeval_toxicity'].includes(entry[0])?(entry[1]<=.3?'Low':'High'):(entry[1]>=.7?'Pass':'Below')"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- ── Per-sample table ── -->
+        <div class="card" style="padding: 0; overflow: hidden;">
+          <div style="padding: 16px 20px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between;">
+            <p style="font-size: 14px; font-weight: 600; color: var(--ink); margin: 0;">Per-sample breakdown</p>
+            <p style="font-size: 11px; color: var(--mute); margin: 0; display: none;" class="sm:block"
+               x-show="results&&results.deepeval">Click row &rarr; see DeepEval reasons</p>
+          </div>
+
+          <!-- Desktop table -->
+          <div style="overflow-x: auto; display: none;" class="sm:block">
+            <table class="eval-table">
+              <thead>
+                <tr>
+                  <th style="padding-left: 20px; width: 40px;">#</th>
+                  <th>Question</th>
+                  <template x-if="results&&results.ragas">
+                    <th>Faith.</th>
+                  </template>
+                  <template x-if="results&&results.ragas">
+                    <th>Ans.Rel</th>
+                  </template>
+                  <template x-if="results&&results.ragas">
+                    <th>Ctx.Prec</th>
+                  </template>
+                  <template x-if="results&&results.ragas">
+                    <th>Ctx.Rec</th>
+                  </template>
+                  <template x-if="results&&results.deepeval">
+                    <th>Halluc.</th>
+                  </template>
+                  <template x-if="results&&results.deepeval">
+                    <th>CtxRel</th>
+                  </template>
+                  <template x-if="results&&results.deepeval">
+                    <th>Bias</th>
+                  </template>
+                  <template x-if="results&&results.deepeval">
+                    <th>Toxic.</th>
+                  </template>
+                </tr>
+              </thead>
+              <template x-for="(row,i) in tableRows" :key="i">
+                <tbody>
+                  <tr class="data-row" @click="toggleRow(i)">
+                    <td style="padding-left: 20px; font-family: 'JetBrains Mono', monospace; color: var(--mute); font-size: 11px;" x-text="i+1"></td>
+                    <td style="max-width: 220px;">
+                      <p style="color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; margin: 0;" x-text="row.question"></p>
+                      <p style="font-size: 11px; color: var(--mute); margin: 2px 0 0; font-family: 'JetBrains Mono', monospace;"
+                         x-show="results&&results.deepeval"
+                         x-text="expandedRow===i?'▲ hide':'▼ reasons'"></p>
+                    </td>
+                    <template x-if="results&&results.ragas">
+                      <template x-for="col in ['faithfulness','answer_relevancy','context_precision','context_recall']" :key="col">
+                        <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500;"
+                            :class="row[col]>=.7?'score-good':row[col]>=.5?'score-warn':'score-bad'"
+                            x-text="row[col]!=null?Number(row[col]).toFixed(2):'—'"></td>
+                      </template>
+                    </template>
+                    <template x-if="results&&results.deepeval">
+                      <template x-for="col in deColKeys" :key="col">
+                        <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500;"
+                            :class="(['deepeval_hallucination','deepeval_bias','deepeval_toxicity'].includes(col))?(results.deepeval[i]&&results.deepeval[i][col]<=.3?'score-good':results.deepeval[i]&&results.deepeval[i][col]<=.6?'score-warn':'score-bad'):(results.deepeval[i]&&results.deepeval[i][col]>=.7?'score-good':results.deepeval[i]&&results.deepeval[i][col]>=.5?'score-warn':'score-bad')"
+                            x-text="results.deepeval[i]&&results.deepeval[i][col]!=null?Number(results.deepeval[i][col]).toFixed(2):'—'"></td>
+                      </template>
+                    </template>
+                  </tr>
+                  <tr x-show="expandedRow===i&&results&&results.deepeval&&results.deepeval[i]" class="reason-row">
+                    <td colspan="10" style="padding: 14px 20px;">
+                      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                        <template x-for="col in deColKeys" :key="col">
+                          <div x-show="results.deepeval[i]&&results.deepeval[i][col+'_reason']" class="reason-card">
+                            <p class="section-label" style="margin: 0 0 6px;" x-text="col.replace('deepeval_','').replace(/_/g,' ')"></p>
+                            <p style="margin: 0;" x-text="results.deepeval[i][col+'_reason']"></p>
+                          </div>
+                        </template>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </template>
+            </table>
+          </div>
+
+          <!-- Mobile cards -->
+          <div style="display: block;" class="sm:hidden">
+            <template x-for="(row,i) in tableRows" :key="i">
+              <div style="padding: 16px; border-bottom: 1px solid var(--hairline);">
+                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px;">
+                  <p style="font-size: 13px; font-weight: 500; color: var(--ink); margin: 0; line-height: 1.4;" x-text="row.question"></p>
+                  <span class="inp-mono" style="font-size: 11px; color: var(--mute); flex-shrink: 0;" x-text="'#'+(i+1)"></span>
+                </div>
+                <template x-if="results&&results.ragas">
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; margin-bottom: 8px;">
+                    <template x-for="[lbl,col] in [['Faithfulness','faithfulness'],['Ans. Rel','answer_relevancy'],['Ctx. Prec','context_precision'],['Ctx. Rec','context_recall']]" :key="col">
+                      <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 6px; background: var(--canvas-soft); border: 1px solid var(--hairline); font-size: 12px;">
+                        <span style="color: var(--mute);" x-text="lbl"></span>
+                        <span class="inp-mono" style="font-weight: 600; font-size: 12px;"
+                              :class="row[col]>=.7?'score-good':row[col]>=.5?'score-warn':'score-bad'"
+                              x-text="row[col]!=null?Number(row[col]).toFixed(2):'—'"></span>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+                <template x-if="results&&results.deepeval&&results.deepeval[i]">
+                  <div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; margin-bottom: 8px;">
+                      <template x-for="[lbl,col] in [['Halluc.','deepeval_hallucination'],['CtxRel','deepeval_contextualrelevancy'],['Bias','deepeval_bias'],['Toxic.','deepeval_toxicity']]" :key="col">
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 6px; background: var(--canvas-soft); border: 1px solid var(--hairline); font-size: 12px;">
+                          <span style="color: var(--mute);" x-text="lbl"></span>
+                          <span class="inp-mono" style="font-weight: 600; font-size: 12px;"
+                                :class="(['deepeval_hallucination','deepeval_bias','deepeval_toxicity'].includes(col))?(results.deepeval[i][col]<=.3?'score-good':results.deepeval[i][col]<=.6?'score-warn':'score-bad'):(results.deepeval[i][col]>=.7?'score-good':results.deepeval[i][col]>=.5?'score-warn':'score-bad')"
+                                x-text="results.deepeval[i][col]!=null?Number(results.deepeval[i][col]).toFixed(2):'—'"></span>
+                        </div>
+                      </template>
+                    </div>
+                    <button @click="toggleRow(i)"
+                            style="font-size: 12px; color: var(--body); background: none; border: none; cursor: pointer; padding: 0; font-family: 'JetBrains Mono', monospace;"
+                            x-text="expandedRow===i?'▲ hide reasons':'▼ DeepEval reasons'"></button>
+                    <div x-show="expandedRow===i" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                      <template x-for="col in deColKeys" :key="col">
+                        <div x-show="results.deepeval[i][col+'_reason']" class="reason-card">
+                          <p class="section-label" style="margin: 0 0 5px;" x-text="col.replace('deepeval_','').replace(/_/g,' ')"></p>
+                          <p style="margin: 0;" x-text="results.deepeval[i][col+'_reason']"></p>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Empty results -->
+    <section x-show="page==='results'&&!results" class="page-enter"
+             style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 70vh; text-align: center; padding: 24px;">
+      <div style="width: 48px; height: 48px; border-radius: 10px; background: var(--canvas);
+                  box-shadow: var(--shadow-l4); display: flex; align-items: center;
+                  justify-content: center; margin: 0 auto 20px; border: 1px solid var(--hairline);">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <rect x="3" y="2" width="16" height="18" rx="2" stroke="var(--body)" stroke-width="1.5"/>
+          <path d="M7 8h8M7 12h8M7 16h5" stroke="var(--body)" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="17" cy="17" r="4" fill="var(--canvas-soft)" stroke="var(--hairline)" stroke-width="1"/>
+          <path d="M15.5 17h3M17 15.5v3" stroke="var(--body)" stroke-width="1" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <p style="font-size: 16px; font-weight: 600; color: var(--ink); margin: 0 0 6px; letter-spacing: -0.3px;">No results yet</p>
+      <p style="font-size: 13px; color: var(--mute); margin: 0 0 24px;">Run an evaluation to see results here.</p>
+      <button @click="page='evaluate'" class="btn-primary">Start evaluating &rarr;</button>
+    </section>
+
+  </main>
+  </div><!-- /main-content -->
+  </div><!-- /app-shell -->
+
+  <!-- ─── JavaScript ──────────────────────────────────────────────── -->
+  <script>
+  function app() {
+    return {
+      page: 'home',
+      step: 1,
+      steps: ['Judge Model', 'Dataset', 'Run'],
+
+      sidebarOpen: window.innerWidth >= 768,
+      configOpen: false,
+      sessions: [],
+      activeSessionId: null,
+
+      providers: [
+        { id:'gemini', name:'Gemini', icon:'G', tag:'3.5 Flash · 3.1 Pro · Lite', color:'#4285f4', placeholder:'AIza…',
+          models:['gemini-3.5-flash','gemini-3.1-pro-preview','gemini-3.1-flash-lite','gemini-3-flash-preview'] },
+        { id:'groq', name:'Groq', icon:'Gq', tag:'Fetch all models from API', color:'#f55036', placeholder:'gsk_…',
+          models:['llama-3.3-70b-versatile','llama-3.1-70b-versatile','llama-3.1-8b-instant','mixtral-8x7b-32768','gemma2-9b-it'] },
+        { id:'openrouter', name:'OpenRouter', icon:'OR', tag:'Fetch all models from API', color:'#7c3aed', placeholder:'sk-or-v1-…',
+          models:['openai/gpt-4o-mini','openai/gpt-4o','anthropic/claude-haiku','meta-llama/llama-3.3-70b-instruct'] },
+      ],
+      provider: 'gemini',
+      apiKey: '',
+      showKey: false,
+      judgeModel: 'gemini-3.5-flash',
+      ragasMetrics: [
+        { key:'faithfulness',      label:'Faithfulness',      desc:'Answer grounded in context?',    enabled:true  },
+        { key:'answer_relevancy',  label:'Answer Relevancy',  desc:'Addresses the question?',        enabled:true  },
+        { key:'context_precision', label:'Context Precision', desc:'Retrieved chunks relevant?',     enabled:true  },
+        { key:'context_recall',    label:'Context Recall',    desc:'Context covers ground truth?',   enabled:true  },
+      ],
+      deepevalMetrics: [
+        { key:'hallucination',       label:'Hallucination',        desc:'Fabricated facts? (lower=better)', enabled:true  },
+        { key:'contextualrelevancy', label:'Contextual Relevancy', desc:'Context relevant to query?',       enabled:true  },
+        { key:'bias',                label:'Bias',                 desc:'Gender/racial bias? (lower=better)',enabled:false },
+        { key:'toxicity',            label:'Toxicity',             desc:'Harmful content? (lower=better)',  enabled:false },
+      ],
+
+      validating: false,
+      keyValid: null,
+      validationError: '',
+
+      groqModelsLoading: false,
+      groqModelsFetched: false,
+
+      inputMode: 'upload',
+      dataset: [],
+      manual: { question:'', answer:'', contexts:'', ground_truth:'' },
+      manualError: '',
+
+      loading: false,
+      evalError: null,
+      results: null,
+      loadingMsg: 'Judge model is scoring each sample…',
+      progressPct: 0,
+      elapsedSecs: 0,
+      progressTimer: null,
+
+      expandedRow: null,
+      editingIdx: null,
+      editContextsStr: '',
+      toasts: [],
+
+      thresholds: { faithfulness:.7, answer_relevancy:.7, context_precision:.6, context_recall:.6 },
+
+      deColKeys: ['deepeval_hallucination','deepeval_contextualrelevancy','deepeval_bias','deepeval_toxicity'],
+
+      metrics: [
+        { name:'Faithfulness',         fw:'RAGAS',    desc:'Answer is grounded in the retrieved context.',       color:'#4285f4' },
+        { name:'Answer Relevancy',     fw:'RAGAS',    desc:'Answer directly addresses the question asked.',      color:'#7928ca' },
+        { name:'Context Precision',    fw:'RAGAS',    desc:'Retrieved chunks are relevant to the query.',        color:'#007cf0' },
+        { name:'Context Recall',       fw:'RAGAS',    desc:'Context covers the expected ground truth fully.',    color:'#00dfd8' },
+        { name:'Hallucination',        fw:'DeepEval', desc:'Fabricated facts not supported by context.',         color:'#dc2626' },
+        { name:'Contextual Relevancy', fw:'DeepEval', desc:'Overall relevance of retrieved context to query.',   color:'#f5a623' },
+        { name:'Bias',                 fw:'DeepEval', desc:'Gender, racial, or political bias in the answer.',   color:'#9333ea' },
+        { name:'Toxicity',             fw:'DeepEval', desc:'Harmful, offensive, or unsafe content detected.',    color:'#ef4444' },
+      ],
+
+      get useRagas() { return this.ragasMetrics.some(m=>m.enabled); },
+      get useDeepeval() { return this.deepevalMetrics.some(m=>m.enabled); },
+      get selectedMetricCount() { return this.ragasMetrics.filter(m=>m.enabled).length + this.deepevalMetrics.filter(m=>m.enabled).length; },
+
+      get currentProvider() { return this.providers.find(p=>p.id===this.provider); },
+      get ragas_entries() { return this.results?.ragas_summary ? Object.entries(this.results.ragas_summary) : []; },
+      get deepeval_entries() { return this.results?.deepeval_summary ? Object.entries(this.results.deepeval_summary).filter(([k])=>!k.includes('reason')) : []; },
+      get tableRows() { return this.results?.ragas || this.results?.deepeval || []; },
+      get estimatedSecs() {
+        // ~8s per LLM call; RAGAS metrics run sequentially, DeepEval runs in parallel per sample
+        const ragasMetrics  = this.ragasMetrics.filter(m=>m.enabled).length;
+        const deepMetrics   = this.deepevalMetrics.filter(m=>m.enabled).length;
+        const ragasSecs     = this.dataset.length * ragasMetrics * 8;
+        // deepeval metrics parallelised per sample — cost ≈ 1 metric * samples (slowest path)
+        const deepSecs      = deepMetrics > 0 ? this.dataset.length * 10 : 0;
+        return ragasSecs + deepSecs;
+      },
+      get estimatedMins() {
+        return Math.max(1, Math.ceil(this.estimatedSecs / 60));
+      },
+      get estimatedLabel() {
+        const s = this.estimatedSecs;
+        if (s < 60) return `~${s}s`;
+        const m = Math.ceil(s/60);
+        return `~${m} min`;
+      },
+
+      get overallScore() {
+        if (!this.results) return 0;
+        const lb = ['deepeval_hallucination','deepeval_bias','deepeval_toxicity'];
+        const all = [
+          ...Object.entries(this.results.ragas_summary||{}),
+          ...Object.entries(this.results.deepeval_summary||{}).filter(([k])=>!k.includes('reason')),
+        ];
+        if (!all.length) return 0;
+        const passing = all.filter(([k,v]) => {
+          const thresh = this.thresholds[k] || (lb.includes(k) ? 0.3 : 0.7);
+          return lb.includes(k) ? v <= thresh : v >= thresh;
+        }).length;
+        return Math.round((passing / all.length) * 100);
+      },
+      get passingMetrics() {
+        if (!this.results) return 0;
+        const lb = ['deepeval_hallucination','deepeval_bias','deepeval_toxicity'];
+        return [...Object.entries(this.results.ragas_summary||{}), ...Object.entries(this.results.deepeval_summary||{}).filter(([k])=>!k.includes('reason'))].filter(([k,v]) => {
+          const thresh = this.thresholds[k] || (lb.includes(k) ? 0.3 : 0.7);
+          return lb.includes(k) ? v <= thresh : v >= thresh;
+        }).length;
+      },
+      get failingMetrics() {
+        if (!this.results) return 0;
+        const lb = ['deepeval_hallucination','deepeval_bias','deepeval_toxicity'];
+        return [...Object.entries(this.results.ragas_summary||{}), ...Object.entries(this.results.deepeval_summary||{}).filter(([k])=>!k.includes('reason'))].filter(([k,v]) => {
+          const thresh = this.thresholds[k] || (lb.includes(k) ? 0.3 : 0.7);
+          return lb.includes(k) ? v > thresh*2 : v < 0.5;
+        }).length;
+      },
+      get borderlineMetrics() {
+        if (!this.results) return 0;
+        const total = [...Object.entries(this.results.ragas_summary||{}), ...Object.entries(this.results.deepeval_summary||{}).filter(([k])=>!k.includes('reason'))].length;
+        return Math.max(0, total - this.passingMetrics - this.failingMetrics);
+      },
+      get totalMetricsRun() {
+        if (!this.results) return 0;
+        return [...Object.entries(this.results.ragas_summary||{}), ...Object.entries(this.results.deepeval_summary||{}).filter(([k])=>!k.includes('reason'))].length;
+      },
+
+      init() {
+        // Restore settings from localStorage
+        try {
+          const saved = JSON.parse(localStorage.getItem('rageval_settings') || '{}');
+          if (saved.provider)   this.provider   = saved.provider;
+          if (saved.apiKey)     this.apiKey     = saved.apiKey;
+          if (saved.judgeModel) this.judgeModel = saved.judgeModel;
+          if (saved.apiKey) this.keyValid = null;
+        } catch {}
+        // Restore sessions list
+        try {
+          this.sessions = JSON.parse(localStorage.getItem('rageval_sessions') || '[]');
+        } catch {}
+        // Auto-resize charts whenever their container changes size
+        if (typeof ResizeObserver !== 'undefined') {
+          this._chartObserver = new ResizeObserver(entries => {
+            entries.forEach(e => {
+              if (e.target.id && e.target.data) Plotly.relayout(e.target.id, { autosize:true });
+            });
+          });
+        }
+        // Auto-save on change
+        this.$watch('judgeModel', () => this._saveSettings());
+        this.$watch('apiKey',     () => this._saveSettings());
+      },
+
+      _saveSettings() {
+        try {
+          localStorage.setItem('rageval_settings', JSON.stringify({
+            provider: this.provider,
+            apiKey: this.apiKey,
+            judgeModel: this.judgeModel,
+          }));
+        } catch {}
+      },
+
+      _saveSession() {
+        if (!this.results) return;
+        const fwLabel = [this.useRagas&&'RAGAS', this.useDeepeval&&'DeepEval'].filter(Boolean).join('+');
+        const topMetric = this.results.ragas_summary
+          ? Object.values(this.results.ragas_summary).reduce((a,b)=>a+b,0) / Object.values(this.results.ragas_summary).length
+          : null;
+        const scoreStr = topMetric !== null ? ` (avg ${topMetric.toFixed(2)})` : '';
+        const session = {
+          id: Date.now().toString(),
+          createdAt: new Date().toISOString(),
+          label: `${this.currentProvider.name} · ${this.dataset.length} samples${scoreStr}`,
+          provider: this.currentProvider.name,
+          model: this.judgeModel,
+          sampleCount: this.dataset.length,
+          frameworks: fwLabel,
+          results: JSON.parse(JSON.stringify(this.results)),
+          dataset: JSON.parse(JSON.stringify(this.dataset)),
+          judgeModel: this.judgeModel,
+          useRagas: this.useRagas,
+          useDeepeval: this.useDeepeval,
+        };
+        this.sessions.unshift(session);
+        // Keep max 20 sessions
+        if (this.sessions.length > 20) this.sessions = this.sessions.slice(0, 20);
+        this.activeSessionId = session.id;
+        try {
+          localStorage.setItem('rageval_sessions', JSON.stringify(this.sessions));
+        } catch {}
+        return session.id;
+      },
+
+      loadSession(id) {
+        const s = this.sessions.find(x => x.id === id);
+        if (!s) return;
+        this.activeSessionId = id;
+        this.results = s.results;
+        this.dataset = s.dataset || [];
+        this.judgeModel = s.judgeModel || s.model;
+        this.page = 'results';
+        this.$nextTick(() => this._renderCharts());
+        if (window.innerWidth < 768) this.sidebarOpen = false;
+      },
+
+      deleteSession(id) {
+        this.sessions = this.sessions.filter(s => s.id !== id);
+        if (this.activeSessionId === id) this.activeSessionId = null;
+        try {
+          localStorage.setItem('rageval_sessions', JSON.stringify(this.sessions));
+        } catch {}
+      },
+
+      newRun() {
+        this.activeSessionId = null;
+        this.results = null;
+        this.dataset = [];
+        this.step = 1;
+        this.page = 'evaluate';
+        if (window.innerWidth < 768) this.sidebarOpen = false;
+      },
+
+      formatDate(iso) {
+        try {
+          const d = new Date(iso);
+          const now = new Date();
+          const diff = now - d;
+          if (diff < 60000) return 'just now';
+          if (diff < 3600000) return Math.floor(diff/60000)+'m ago';
+          if (diff < 86400000) return Math.floor(diff/3600000)+'h ago';
+          return d.toLocaleDateString(undefined, { month:'short', day:'numeric' });
+        } catch { return ''; }
+      },
+
+      openEdit(i) {
+        this.editingIdx = i;
+        this.editContextsStr = (this.dataset[i].contexts||[]).join('\n');
+      },
+      saveEdit(i) {
+        this.dataset[i].contexts = this.editContextsStr.split('\n').map(l=>l.trim()).filter(Boolean);
+        this.editingIdx = null;
+        this.toast('Sample updated.', 'success');
+      },
+      deleteDatasetItem(i) {
+        this.dataset.splice(i, 1);
+        if (this.editingIdx === i) this.editingIdx = null;
+        else if (this.editingIdx > i) this.editingIdx--;
+      },
+
+      toggleAllRagas() {
+        const allOn = this.ragasMetrics.every(m=>m.enabled);
+        this.ragasMetrics.forEach(m => m.enabled = !allOn);
+      },
+      toggleAllDeepeval() {
+        const allOn = this.deepevalMetrics.every(m=>m.enabled);
+        this.deepevalMetrics.forEach(m => m.enabled = !allOn);
+      },
+
+      selectProvider(id) {
+        this.provider = id;
+        this.apiKey = '';
+        this.keyValid = null;
+        this.validationError = '';
+        this.groqModelsFetched = false;
+        this.judgeModel = this.providers.find(p=>p.id===id).models[0];
+        this._saveSettings();
+      },
+
+      async validateAndSave() {
+        await this.validateKey();
+        if (this.keyValid === true) {
+          this._saveSettings();
+          // Auto-close popover after short delay so user sees the ✓
+          setTimeout(() => { this.configOpen = false; }, 900);
+        }
+      },
+
+      async validateKey() {
+        if (!this.apiKey) return;
+        this.validating = true; this.keyValid = null; this.validationError = '';
+        try {
+          const r = await fetch('/api/validate', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ provider:this.provider, api_key:this.apiKey, model:this.judgeModel }),
+          });
+          const d = await r.json();
+          if (d.valid) { this.keyValid = true; this.toast('API key is valid ✓', 'success'); this._saveSettings(); }
+          else { this.keyValid = false; this.validationError = (d.error||'Invalid key').substring(0,100); this.toast('Key validation failed.', 'error'); }
+        } catch { this.keyValid = false; this.validationError = 'Network error'; }
+        finally { this.validating = false; }
+      },
+
+      async fetchGroqModels() {
+        if (!this.apiKey || this.provider!=='groq') return;
+        this.groqModelsLoading = true;
+        try {
+          const r = await fetch(`/api/models/groq?api_key=${encodeURIComponent(this.apiKey)}`);
+          if (!r.ok) throw new Error();
+          const d = await r.json();
+          this.providers.find(p=>p.id==='groq').models = d.models;
+          this.judgeModel = d.models[0] || this.judgeModel;
+          this.groqModelsFetched = true;
+          this._saveSettings();
+          this.toast(`${d.models.length} Groq models loaded.`, 'success');
+        } catch { this.toast('Could not fetch Groq models.', 'error'); }
+        finally { this.groqModelsLoading = false; }
+      },
+
+      async fetchOpenRouterModels() {
+        if (!this.apiKey || this.provider!=='openrouter') return;
+        this.groqModelsLoading = true;
+        try {
+          const r = await fetch(`/api/models/openrouter?api_key=${encodeURIComponent(this.apiKey)}`);
+          if (!r.ok) throw new Error();
+          const d = await r.json();
+          this.providers.find(p=>p.id==='openrouter').models = d.models;
+          this.judgeModel = d.models[0] || this.judgeModel;
+          this.groqModelsFetched = true;
+          this._saveSettings();
+          this.toast(`${d.models.length} OpenRouter models loaded.`, 'success');
+        } catch { this.toast('Could not fetch OpenRouter models.', 'error'); }
+        finally { this.groqModelsLoading = false; }
+      },
+
+      handleDrop(e) { const f=e.dataTransfer.files[0]; if(f) this._readFile(f); },
+      handleFile(e) { const f=e.target.files[0]; if(f) this._readFile(f); },
+      _readFile(file) {
+        const r = new FileReader();
+        r.onload = ev => {
+          try { this.dataset = JSON.parse(ev.target.result); this.toast(`${this.dataset.length} samples loaded.`, 'success'); }
+          catch { this.toast('Invalid JSON file.', 'error'); }
+        };
+        r.readAsText(file);
+      },
+
+      async loadSample() {
+        try {
+          const r = await fetch('/api/sample');
+          this.dataset = await r.json();
+          this.inputMode = 'sample';
+          this.toast(`${this.dataset.length} sample entries loaded.`, 'success');
+        } catch { this.toast('Could not load sample dataset.', 'error'); }
+      },
+
+      addManual() {
+        const { question, answer, contexts, ground_truth } = this.manual;
+        if (!question||!answer||!contexts||!ground_truth) { this.manualError='All four fields are required.'; return; }
+        this.dataset.push({ question, answer, ground_truth, contexts: contexts.split('\n').map(l=>l.trim()).filter(Boolean) });
+        this.manual = { question:'', answer:'', contexts:'', ground_truth:'' };
+        this.manualError = '';
+        this.toast('Entry added.', 'success');
+      },
+
+      _startProgress() {
+        const total = this.estimatedSecs;
+        this.progressPct = 0; this.elapsedSecs = 0;
+        const msgs = [
+          'Judge model is scoring each sample…',
+          'Computing faithfulness scores…',
+          'Evaluating answer relevancy…',
+          'Running hallucination detection…',
+          'Checking contextual relevancy…',
+          'Almost there, finalising scores…',
+        ];
+        this.progressTimer = setInterval(() => {
+          this.elapsedSecs++;
+          this.progressPct = Math.min(92, (this.elapsedSecs/total)*100);
+          this.loadingMsg = msgs[Math.floor(this.elapsedSecs/10) % msgs.length];
+        }, 1000);
+      },
+
+      _stopProgress() { clearInterval(this.progressTimer); this.progressPct = 100; },
+
+      async runEvaluation() {
+        this.loading = true; this.evalError = null;
+        this._startProgress();
+        try {
+          const resp = await fetch('/api/evaluate', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              items: this.dataset.map(d=>({ question:d.question, answer:d.answer, contexts:d.contexts, ground_truth:d.ground_truth })),
+              gemini_api_key:      this.provider==='gemini'      ? this.apiKey : '',
+              groq_api_key:        this.provider==='groq'        ? this.apiKey : '',
+              groq_model:          this.provider==='groq'        ? this.judgeModel : '',
+              openrouter_api_key:  this.provider==='openrouter'  ? this.apiKey : '',
+              openrouter_model:    this.provider==='openrouter'  ? this.judgeModel : '',
+              use_ragas:           this.useRagas,
+              use_deepeval:        this.useDeepeval,
+            }),
+          });
+          if (!resp.ok) { const e=await resp.json().catch(()=>{}); throw new Error(e?.detail||`Error ${resp.status}`); }
+          this.results = await resp.json();
+          this._stopProgress();
+          this._saveSession();
+          this._saveSettings();
+          this.page = 'results';
+          this.$nextTick(() => this._renderCharts());
+          this.toast('Evaluation complete!', 'success');
+        } catch(e) {
+          this._stopProgress();
+          this.evalError = e.message;
+          this.toast('Evaluation failed: '+e.message, 'error');
+        } finally { this.loading = false; }
+      },
+
+      _observe(id) {
+        if (!this._chartObserver) return;
+        const el = document.getElementById(id);
+        if (el) this._chartObserver.observe(el);
+      },
+
+      _renderCharts() {
+        if (!this.results) return;
+        const FONT = 'JetBrains Mono, monospace';
+        const LC   = '#555555';
+        const GC   = '#e5e7eb';
+        const base = {
+          paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+          font:{ color:LC, family:FONT, size:10 },
+          autosize:true,
+        };
+        const cfg  = { responsive:true, displayModeBar:false };
+        const lbKeys    = ['deepeval_hallucination','deepeval_bias','deepeval_toxicity'];
+        const threshMap = this.thresholds;
+        const cleanKey  = k => { const s=k.replace('deepeval_','').replace(/_/g,' '); return s.charAt(0).toUpperCase()+s.slice(1); };
+
+        // ── Bar chart ──────────────────────────────────────────────
+        const allM = [
+          ...Object.entries(this.results.ragas_summary||{}),
+          ...Object.entries(this.results.deepeval_summary||{}).filter(([k])=>!k.includes('reason')),
+        ];
+        if (allM.length && document.getElementById('barChart')) {
+          const labels = allM.map(([k])=>cleanKey(k));
+          const vals   = allM.map(([,v])=>+(v||0));
+          const colors = allM.map(([k,v]) => {
+            const lb=lbKeys.includes(k), th=threshMap[k]||(lb?0.3:0.7);
+            return (lb?v<=th:v>=th)?'#16a34a':(lb?v<=(th*2):v>=0.5)?'#d97706':'#dc2626';
+          });
+          const shapes = allM.map(([k],i)=>{
+            const lb=lbKeys.includes(k), th=threshMap[k]||(lb?0.3:0.7);
+            return { type:'line', x0:i-0.38, x1:i+0.38, y0:th, y1:th,
+                     line:{ color:lb?'#6366f1':'#374151', width:1.5, dash:'dot' } };
+          });
+          Plotly.newPlot('barChart',[{
+            type:'bar', x:labels, y:vals,
+            marker:{ color:colors, opacity:0.88, line:{ width:0 } },
+            text:vals.map(v=>v.toFixed(2)), textposition:'outside',
+            textfont:{ size:10, color:LC, family:FONT },
+            hovertemplate:'<b>%{x}</b><br>Score: %{y:.3f}<extra></extra>',
+            cliponaxis:false,
+          }],{
+            ...base,
+            margin:{ autoexpand:true, t:32, b:8, l:8, r:8, pad:4 },
+            xaxis:{ color:LC, tickfont:{size:10,family:FONT}, tickangle:-30,
+                    automargin:true, fixedrange:true },
+            yaxis:{ color:LC, tickfont:{size:10,family:FONT}, range:[0,1.22],
+                    gridcolor:GC, showgrid:true, zeroline:false,
+                    automargin:true, fixedrange:true },
+            shapes, bargap:0.35,
+          }, cfg);
+          this._observe('barChart');
+        }
+
+        // ── Radar: single combined trace ──────────────────────────
+        const radarData = [
+          ...Object.entries(this.results.ragas_summary||{}),
+          ...Object.entries(this.results.deepeval_summary||{}).filter(([k])=>!k.includes('reason')),
+        ];
+        if (radarData.length>=3 && document.getElementById('radarChart')) {
+          const cats = radarData.map(([k])=>cleanKey(k));
+          const vals = radarData.map(([,v])=>+(v||0));
+          Plotly.newPlot('radarChart',[{
+            type:'scatterpolar',
+            r:[...vals, vals[0]], theta:[...cats, cats[0]],
+            fill:'toself',
+            line:{ color:'#2563eb', width:2 },
+            fillcolor:'rgba(37,99,235,0.12)',
+            hovertemplate:'<b>%{theta}</b>: %{r:.3f}<extra></extra>',
+          }],{
+            ...base,
+            margin:{ autoexpand:true, t:16, b:16, l:16, r:16, pad:8 },
+            polar:{
+              domain:{ x:[0,1], y:[0,1] },
+              radialaxis:{ visible:true, range:[0,1], color:'#d1d5db', gridcolor:GC,
+                           tickfont:{size:9,color:LC,family:FONT}, tickvals:[0.25,0.5,0.75,1],
+                           tickformat:'.2f' },
+              angularaxis:{ color:'#9ca3af', tickfont:{size:11,color:'#374151',family:FONT} },
+              bgcolor:'rgba(0,0,0,0)',
+            },
+            showlegend:false,
+          }, cfg);
+          this._observe('radarChart');
+        }
+      },
+
+      ringColor(val, invert=false) {
+        const good = invert ? val<=.3 : val>=.7;
+        const mid  = invert ? val<=.6 : val>=.5;
+        return good ? '#16a34a' : mid ? '#d97706' : '#dc2626';
+      },
+
+      toggleRow(i) { this.expandedRow = this.expandedRow===i ? null : i; },
+
+      exportCSV() {
+        const rows = this.results?.ragas; if(!rows?.length) return;
+        const keys = Object.keys(rows[0]).filter(k=>!k.includes('reason'));
+        const csv  = [keys.join(','), ...rows.map(r=>keys.map(k=>JSON.stringify(r[k]??'')).join(','))].join('\n');
+        Object.assign(document.createElement('a'),{href:'data:text/csv;charset=utf-8,'+encodeURIComponent(csv),download:'rag_eval_results.csv'}).click();
+      },
+
+      toast(msg, type='info') {
+        const id = Date.now()+Math.random();
+        this.toasts.push({id, msg, type});
+        setTimeout(()=>{ this.toasts=this.toasts.filter(t=>t.id!==id); }, 4500);
+      },
+    };
+  }
+  </script>
+</body>
+</html>

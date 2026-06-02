@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.deepeval
+uvicorn.log
+uvicorn_err.log
+.claude/
+*.egg-info/
+dist/
+build/
+.DS_Store

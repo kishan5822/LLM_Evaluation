@@ -1,0 +1,52 @@
+[
+  {
+    "id": 1,
+    "question": "What is Retrieval-Augmented Generation (RAG)?",
+    "contexts": [
+      "Retrieval-Augmented Generation (RAG) is a technique that enhances large language models by retrieving relevant documents from an external knowledge base before generating a response. It combines the parametric knowledge of LLMs with non-parametric retrieval to reduce hallucinations.",
+      "RAG systems typically consist of a retriever component that fetches relevant context and a generator component (LLM) that synthesizes the final answer using the retrieved context."
+    ],
+    "ground_truth": "RAG is a technique that combines document retrieval with LLM generation to produce more accurate and grounded responses by fetching relevant context before answering.",
+    "answer": "RAG, or Retrieval-Augmented Generation, is an AI framework that improves LLM responses by first retrieving relevant documents from an external database, then using those documents as context when generating an answer. This reduces hallucinations and keeps responses grounded in real information."
+  },
+  {
+    "id": 2,
+    "question": "What are vector databases used for in AI applications?",
+    "contexts": [
+      "Vector databases store high-dimensional embeddings and enable fast similarity search using algorithms like HNSW or IVF. They are fundamental infrastructure for RAG pipelines, semantic search, and recommendation systems.",
+      "Popular vector databases include ChromaDB, FAISS, Pinecone, Weaviate, and Qdrant. They allow storing and querying millions of embeddings efficiently."
+    ],
+    "ground_truth": "Vector databases store and retrieve high-dimensional embeddings for semantic similarity search, used in RAG systems, semantic search engines, and recommendation engines.",
+    "answer": "Vector databases are specialized databases designed to store and search high-dimensional embedding vectors. In AI applications they power semantic search, RAG pipelines, and recommendation systems by finding the most similar vectors to a given query using algorithms like HNSW."
+  },
+  {
+    "id": 3,
+    "question": "What is the difference between fine-tuning and prompt engineering?",
+    "contexts": [
+      "Prompt engineering involves crafting input prompts to guide LLM behavior without modifying model weights. It is fast, cheap, and requires no training data.",
+      "Fine-tuning updates model weights on domain-specific data to internalize new knowledge or behavior. It requires labeled training data and compute resources but can achieve better task-specific performance."
+    ],
+    "ground_truth": "Prompt engineering guides model behavior through input design without changing weights; fine-tuning updates model weights using domain-specific data for deeper adaptation.",
+    "answer": "Prompt engineering shapes how a model responds by carefully designing the input text, requiring no model training. Fine-tuning actually updates the model's weights using domain-specific training data, making it more suitable for specialized tasks but requiring more resources."
+  },
+  {
+    "id": 4,
+    "question": "What is LangChain and what is it used for?",
+    "contexts": [
+      "LangChain is an open-source framework for building applications powered by large language models. It provides abstractions for chains, agents, memory, and tool integrations.",
+      "LangChain supports building RAG pipelines, conversational agents, document Q&A systems, and multi-step reasoning workflows by chaining LLM calls and tool uses."
+    ],
+    "ground_truth": "LangChain is a framework for building LLM-powered applications including RAG pipelines, conversational agents, and document Q&A systems through modular chains and tool integrations.",
+    "answer": "LangChain is an open-source Python framework that simplifies building LLM-powered applications. It provides ready-made components for creating RAG pipelines, chatbots, document Q&A systems, and autonomous agents by chaining together LLM calls, memory, and external tools."
+  },
+  {
+    "id": 5,
+    "question": "What is RAGAS and why is it used?",
+    "contexts": [
+      "RAGAS (Retrieval Augmented Generation Assessment) is an evaluation framework specifically designed for RAG pipelines. It measures faithfulness, answer relevancy, context precision, and context recall.",
+      "RAGAS uses LLM-as-a-judge methodology to compute reference-free metrics, enabling automated evaluation of RAG output quality without requiring human annotations."
+    ],
+    "ground_truth": "RAGAS is an evaluation framework for RAG pipelines that measures faithfulness, answer relevancy, context precision, and context recall using LLM-as-a-judge methodology.",
+    "answer": "RAGAS is an evaluation framework built specifically for RAG systems. It automatically scores RAG outputs on faithfulness, answer relevancy, context precision, and context recall using an LLM as the judge, eliminating the need for expensive human annotations."
+  }
+]
