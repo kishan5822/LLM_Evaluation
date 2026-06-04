@@ -52,6 +52,11 @@ def _build_embeddings(gemini_api_key=""):
     try:
         from langchain_huggingface import HuggingFaceEmbeddings
         return LangchainEmbeddingsWrapper(HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"))
+    except ImportError:
+        pass
+    try:
+        from langchain_community.embeddings import HuggingFaceEmbeddings as HFEmb
+        return LangchainEmbeddingsWrapper(HFEmb(model_name="all-MiniLM-L6-v2"))
     except Exception:
         return None
 
