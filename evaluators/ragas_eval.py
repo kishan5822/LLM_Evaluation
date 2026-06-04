@@ -17,6 +17,7 @@ def _build_llm(gemini_api_key="", groq_api_key="", openrouter_api_key="", openro
             openai_api_key=gemini_api_key,
             openai_api_base=_GEMINI_BASE,
             temperature=0,
+            max_retries=3,
         ))
     if groq_api_key:
         return LangchainLLMWrapper(ChatOpenAI(
@@ -24,6 +25,7 @@ def _build_llm(gemini_api_key="", groq_api_key="", openrouter_api_key="", openro
             openai_api_key=groq_api_key,
             openai_api_base=_GROQ_BASE,
             temperature=0,
+            max_retries=3,
         ))
     if openrouter_api_key:
         return LangchainLLMWrapper(ChatOpenAI(
@@ -31,6 +33,7 @@ def _build_llm(gemini_api_key="", groq_api_key="", openrouter_api_key="", openro
             openai_api_key=openrouter_api_key,
             openai_api_base=_OPENROUTER_BASE,
             temperature=0,
+            max_retries=3,
             default_headers={"HTTP-Referer": "https://rageval.app", "X-Title": "RAGEval"},
         ))
     raise ValueError("Provide at least one API key.")
@@ -73,6 +76,11 @@ def run_ragas_evaluation(
     llm = _build_llm(gemini_api_key, groq_api_key, openrouter_api_key, openrouter_model)
     embeddings = _build_embeddings(gemini_api_key)
 
+    # Reference-free mode: if no sample has a ground truth, context_precision and
+    # context_recall (both reference-based) can't be computed — run only the
+    # reference-free metrics.
+    has_reference = any((gt or "").strip() for gt in ground_truths)
+
     samples = [
         SingleTurnSample(
             user_input=q,
@@ -87,9 +95,10 @@ def run_ragas_evaluation(
     metrics = [
         Faithfulness(),
         AnswerRelevancy(),
-        LLMContextPrecisionWithReference(),
-        LLMContextRecall(),
     ]
+    if has_reference:
+        metrics.append(LLMContextPrecisionWithReference())
+        metrics.append(LLMContextRecall())
 
     kwargs = dict(dataset=dataset, metrics=metrics, llm=llm, raise_exceptions=False)
     if embeddings is not None:

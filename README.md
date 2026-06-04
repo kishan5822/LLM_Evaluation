@@ -1,5 +1,12 @@
 # RAGEval
 
+![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white)
+![RAGAS](https://img.shields.io/badge/RAGAS-VibrantLabs-orange)
+![DeepEval](https://img.shields.io/badge/DeepEval-0.21-7c3aed)
+![Railway](https://img.shields.io/badge/Deployed-Railway-blueviolet?logo=railway&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green)
+
 **Evaluate any RAG pipeline in minutes.** Upload pre-generated answers, pick a judge model, and get structured scores across faithfulness, hallucination, relevancy, and more.
 
 No answer generation happens inside this app — your API key is used only as a judge. It never gets stored.
@@ -93,14 +100,50 @@ Each row needs 4 fields:
 
 Upload as JSON, enter manually, or click **Try sample dataset** in the UI to load a working example instantly.
 
+`ground_truth` is **optional** — omit it and RAGEval runs in reference-free mode (faithfulness + answer relevancy only; context precision/recall are skipped since they need a reference).
+
 ---
 
 ## How to use
 
 1. **Get a free API key** — Gemini (aistudio.google.com), Groq (console.groq.com), or OpenRouter (openrouter.ai)
-2. **Prepare your dataset** — JSON array with `question`, `answer`, `contexts`, `ground_truth` per row (or use the built-in sample)
-3. **Pick metrics** — select any combination of RAGAS and DeepEval metrics
-4. **Run & read results** — aggregate scores, bar chart, radar chart, and a per-sample table with expandable DeepEval reasoning per score
+2. **Prepare your dataset** — JSON array with `question`, `answer`, `contexts` per row, `ground_truth` optional (or use the built-in sample)
+3. **Pick metrics** — select any combination of RAGAS and DeepEval metrics; optionally enable **Confidence mode** to run DeepEval 3× and get a ± stability band
+4. **Run & read results** — aggregate scores, bar chart, radar chart, per-sample table with a failure-category badge per row (retriever vs LLM vs context) and expandable DeepEval reasoning
+
+---
+
+## Integrate with your RAG app
+
+Score a single RAG output directly from your application via the REST API:
+
+```python
+import requests
+
+r = requests.post("https://llmevaluation-production.up.railway.app/api/evaluate/single", json={
+    "question": "What is RAG?",
+    "answer": "RAG combines retrieval with generation...",
+    "contexts": ["Retrieved chunk 1", "Retrieved chunk 2"],
+    "ground_truth": "expected answer",   # optional
+    "provider": "groq",                  # gemini | groq | openrouter
+    "api_key": "gsk_...",
+    "model": "llama-3.3-70b-versatile",
+    "frameworks": ["ragas", "deepeval"],
+})
+print(r.json())   # { scores: {...}, diagnosis: {...}, reference_free: false }
+```
+
+---
+
+## Features
+
+- **8 metrics** across RAGAS + DeepEval in one run
+- **Provider-agnostic judge** — Gemini, Groq, or OpenRouter (no OpenAI dependency)
+- **Failure categorization** — each sample tagged with probable root cause (retriever failure, LLM hallucination, insufficient context, off-topic answer)
+- **Confidence mode** — runs DeepEval 3× per metric, reports mean ± std, flags unstable scores
+- **Reference-free mode** — works on production logs with no ground truth
+- **Retry with backoff** on transient judge-LLM 429/5xx
+- **CSV + JSON export**, plus a `/api/evaluate/single` REST endpoint for live integration
 
 ---
 

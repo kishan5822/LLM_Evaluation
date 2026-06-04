@@ -966,6 +966,15 @@
               </label>
             </div>
 
+            <!-- Confidence mode -->
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; color:var(--body); padding-top:4px;">
+              <div class="toggle-track" :class="confidenceMode?'on':''" style="width:28px;height:16px;flex-shrink:0;">
+                <input type="checkbox" x-model="confidenceMode" class="sr-only"/>
+                <div class="toggle-thumb" style="width:12px;height:12px;top:2px;left:2px;"></div>
+              </div>
+              <span>Confidence mode <span style="color:var(--mute);">— runs DeepEval 3× for ± stability (slower)</span></span>
+            </label>
+
             <!-- Go evaluate CTA -->
             <button @click="configOpen=false;page='evaluate';step=keyValid===true?2:1"
                     class="btn-primary" style="width:100%;justify-content:center;padding:9px;font-size:13px;">
@@ -1582,8 +1591,8 @@
                 @input="$el.style.height='auto';$el.style.height=$el.scrollHeight+'px'"></textarea>
             </div>
             <div>
-              <label class="field-label">Ground truth</label>
-              <textarea x-model="manual.ground_truth" rows="2" placeholder="The correct expected answer…" class="inp"
+              <label class="field-label">Ground truth <span style="color:var(--mute);font-weight:400;">(optional)</span></label>
+              <textarea x-model="manual.ground_truth" rows="2" placeholder="Leave blank for reference-free mode…" class="inp"
                 x-init="$el.style.height=$el.scrollHeight+'px'"
                 @input="$el.style.height='auto';$el.style.height=$el.scrollHeight+'px'"></textarea>
             </div>
@@ -1745,11 +1754,22 @@
             <button @click="exportCSV()" class="btn-secondary" style="font-size: 13px; padding: 8px 16px;">
               &#8595; Export CSV
             </button>
+            <button @click="exportJSON()" class="btn-secondary" style="font-size: 13px; padding: 8px 16px;">
+              &#8595; Export JSON
+            </button>
             <button @click="newRun()"
                     class="btn-primary" style="font-size: 13px; padding: 8px 16px;">
               + New run
             </button>
           </div>
+        </div>
+
+        <!-- Reference-free banner -->
+        <div x-show="results&&results.reference_free" style="display:flex;align-items:flex-start;gap:10px;padding:12px 16px;margin-bottom:24px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;">
+          <span style="color:#1d4ed8;font-size:14px;flex-shrink:0;line-height:1.4;">&#9432;</span>
+          <p style="font-size:12px;color:#1e40af;margin:0;line-height:1.6;">
+            <strong>Reference-free mode.</strong> No ground truth provided, so <strong>context precision</strong> and <strong>context recall</strong> were skipped — these require a reference answer. Faithfulness and answer relevancy run without one.
+          </p>
         </div>
 
         <!-- ── Overall RAG Score ── -->
@@ -1963,6 +1983,9 @@
                   <template x-if="results&&results.deepeval">
                     <th>Toxic.</th>
                   </template>
+                  <template x-if="results&&results.diagnoses">
+                    <th>Diagnosis</th>
+                  </template>
                 </tr>
               </thead>
               <template x-for="(row,i) in tableRows" :key="i">
@@ -1984,10 +2007,26 @@
                     </template>
                     <template x-if="results&&results.deepeval">
                       <template x-for="col in deColKeys" :key="col">
-                        <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500;"
-                            :class="(['deepeval_hallucination','deepeval_bias','deepeval_toxicity'].includes(col))?(results.deepeval[i]&&results.deepeval[i][col]<=.3?'score-good':results.deepeval[i]&&results.deepeval[i][col]<=.6?'score-warn':'score-bad'):(results.deepeval[i]&&results.deepeval[i][col]>=.7?'score-good':results.deepeval[i]&&results.deepeval[i][col]>=.5?'score-warn':'score-bad')"
-                            x-text="results.deepeval[i]&&results.deepeval[i][col]!=null?Number(results.deepeval[i][col]).toFixed(2):'—'"></td>
+                        <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500; white-space:nowrap;"
+                            :class="(['deepeval_hallucination','deepeval_bias','deepeval_toxicity'].includes(col))?(results.deepeval[i]&&results.deepeval[i][col]<=.3?'score-good':results.deepeval[i]&&results.deepeval[i][col]<=.6?'score-warn':'score-bad'):(results.deepeval[i]&&results.deepeval[i][col]>=.7?'score-good':results.deepeval[i]&&results.deepeval[i][col]>=.5?'score-warn':'score-bad')">
+                          <span x-text="results.deepeval[i]&&results.deepeval[i][col]!=null?Number(results.deepeval[i][col]).toFixed(2):'—'"></span>
+                          <template x-if="results.deepeval[i]&&results.deepeval[i][col+'_std']!=null">
+                            <span :title="results.deepeval[i][col+'_std']>0.15?'Unstable across judge runs':'Stable across judge runs'"
+                                  :style="`color:${results.deepeval[i][col+'_std']>0.15?'var(--score-bad)':'var(--mute)'};font-size:10px;font-weight:400;`"
+                                  x-text="' ±'+Number(results.deepeval[i][col+'_std']).toFixed(2)+(results.deepeval[i][col+'_std']>0.15?' ⚠':'')"></span>
+                          </template>
+                        </td>
                       </template>
+                    </template>
+                    <template x-if="results&&results.diagnoses&&results.diagnoses[i]">
+                      <td>
+                        <span :title="results.diagnoses[i].explanation+' — '+results.diagnoses[i].recommendation"
+                              style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:9999px;white-space:nowrap;border:1px solid;"
+                              :style="`color:${results.diagnoses[i].color};border-color:${results.diagnoses[i].color}33;background:${results.diagnoses[i].color}11;`">
+                          <span style="width:5px;height:5px;border-radius:50%;flex-shrink:0;" :style="`background:${results.diagnoses[i].color}`"></span>
+                          <span x-text="results.diagnoses[i].label"></span>
+                        </span>
+                      </td>
                     </template>
                   </tr>
                   <tr x-show="expandedRow===i&&results&&results.deepeval&&results.deepeval[i]" class="reason-row">
@@ -2025,6 +2064,16 @@
                               x-text="row[col]!=null?Number(row[col]).toFixed(2):'—'"></span>
                       </div>
                     </template>
+                  </div>
+                </template>
+                <template x-if="results&&results.diagnoses&&results.diagnoses[i]">
+                  <div style="margin-bottom:10px;">
+                    <span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;padding:3px 9px;border-radius:9999px;border:1px solid;"
+                          :style="`color:${results.diagnoses[i].color};border-color:${results.diagnoses[i].color}33;background:${results.diagnoses[i].color}11;`">
+                      <span style="width:5px;height:5px;border-radius:50%;" :style="`background:${results.diagnoses[i].color}`"></span>
+                      <span x-text="results.diagnoses[i].label"></span>
+                    </span>
+                    <p style="font-size:11px;color:var(--mute);margin:5px 0 0;line-height:1.5;" x-text="results.diagnoses[i].explanation"></p>
                   </div>
                 </template>
                 <template x-if="results&&results.deepeval&&results.deepeval[i]">
@@ -2133,6 +2182,7 @@
       manualError: '',
 
       loading: false,
+      confidenceMode: false,
       evalError: null,
       results: null,
       loadingMsg: 'Judge model is scoring each sample…',
@@ -2447,8 +2497,8 @@
 
       addManual() {
         const { question, answer, contexts, ground_truth } = this.manual;
-        if (!question||!answer||!contexts||!ground_truth) { this.manualError='All four fields are required.'; return; }
-        this.dataset.push({ question, answer, ground_truth, contexts: contexts.split('\n').map(l=>l.trim()).filter(Boolean) });
+        if (!question||!answer||!contexts) { this.manualError='Question, answer and contexts are required.'; return; }
+        this.dataset.push({ question, answer, ground_truth: ground_truth||'', contexts: contexts.split('\n').map(l=>l.trim()).filter(Boolean) });
         this.manual = { question:'', answer:'', contexts:'', ground_truth:'' };
         this.manualError = '';
         this.toast('Entry added.', 'success');
@@ -2489,6 +2539,7 @@
               openrouter_model:    this.provider==='openrouter'  ? this.judgeModel : '',
               use_ragas:           this.useRagas,
               use_deepeval:        this.useDeepeval,
+              confidence_mode:     this.confidenceMode,
             }),
           });
           if (!resp.ok) { const e=await resp.json().catch(()=>{}); throw new Error(e?.detail||`Error ${resp.status}`); }
@@ -2609,6 +2660,14 @@
         const keys = Object.keys(rows[0]).filter(k=>!k.includes('reason'));
         const csv  = [keys.join(','), ...rows.map(r=>keys.map(k=>JSON.stringify(r[k]??'')).join(','))].join('\n');
         Object.assign(document.createElement('a'),{href:'data:text/csv;charset=utf-8,'+encodeURIComponent(csv),download:'rag_eval_results.csv'}).click();
+      },
+
+      exportJSON() {
+        if (!this.results) return;
+        const blob = new Blob([JSON.stringify(this.results, null, 2)], { type:'application/json' });
+        const url = URL.createObjectURL(blob);
+        Object.assign(document.createElement('a'), { href:url, download:`rageval_results_${Date.now()}.json` }).click();
+        URL.revokeObjectURL(url);
       },
 
       toast(msg, type='info') {

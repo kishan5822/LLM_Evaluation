@@ -19,7 +19,7 @@ class DatasetItem(BaseModel):
     question: str
     answer: str
     contexts: List[str]
-    ground_truth: str
+    ground_truth: str = ""
 
 
 class EvalRequest(BaseModel):
@@ -31,6 +31,7 @@ class EvalRequest(BaseModel):
     openrouter_model: str = ""
     use_ragas: bool = True
     use_deepeval: bool = True
+    confidence_mode: bool = False
 
 
 def _sanitize(records: list) -> list:
@@ -70,7 +71,7 @@ def _run_sync(req: EvalRequest) -> dict:
     contexts      = [it.contexts     for it in req.items]
     ground_truths = [it.ground_truth for it in req.items]
 
-    result = {}
+    result = {"reference_free": not any((gt or "").strip() for gt in ground_truths)}
 
     if req.use_ragas:
         df = run_ragas_evaluation(
@@ -91,9 +92,25 @@ def _run_sync(req: EvalRequest) -> dict:
             groq_model=req.groq_model,
             openrouter_api_key=req.openrouter_api_key,
             openrouter_model=req.openrouter_model,
+            confidence_runs=3 if req.confidence_mode else 1,
         )
         result["deepeval"] = _sanitize(df.to_dict("records"))
         result["deepeval_summary"] = _sanitize_dict(compute_deepeval_summary(df))
+
+    # Per-sample failure diagnosis (merge ragas + deepeval scores by index)
+    from evaluators.failure_analyzer import categorize_failure
+    n = len(req.items)
+    ragas_rows = result.get("ragas") or []
+    deep_rows  = result.get("deepeval") or []
+    diagnoses = []
+    for i in range(n):
+        merged = {}
+        if i < len(ragas_rows):
+            merged.update({k: v for k, v in ragas_rows[i].items() if "reason" not in k})
+        if i < len(deep_rows):
+            merged.update({k: v for k, v in deep_rows[i].items() if "reason" not in k})
+        diagnoses.append(categorize_failure(merged))
+    result["diagnoses"] = diagnoses
 
     return result
 
@@ -110,6 +127,70 @@ async def evaluate(req: EvalRequest):
         return await run_in_threadpool(_run_sync, req)
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+class SingleEvalRequest(BaseModel):
+    question: str
+    answer: str
+    contexts: List[str]
+    ground_truth: str = ""
+    provider: str = "groq"          # gemini | groq | openrouter
+    api_key: str
+    model: str = ""
+    frameworks: List[str] = ["ragas", "deepeval"]
+    confidence_mode: bool = False
+
+
+@router.post("/evaluate/single")
+async def evaluate_single(req: SingleEvalRequest):
+    """Evaluate one RAG output. Call this from your own RAG application.
+
+    Example:
+        import requests
+        r = requests.post("https://<host>/api/evaluate/single", json={
+            "question": "What is RAG?",
+            "answer": "RAG is ...",
+            "contexts": ["chunk 1", "chunk 2"],
+            "ground_truth": "expected answer",   # optional
+            "provider": "groq",
+            "api_key": "gsk_...",
+            "model": "llama-3.3-70b-versatile",
+        })
+        print(r.json())
+    """
+    if req.provider not in ("gemini", "groq", "openrouter"):
+        raise HTTPException(400, "provider must be gemini, groq or openrouter.")
+    if not req.api_key:
+        raise HTTPException(400, "api_key is required.")
+
+    inner = EvalRequest(
+        items=[DatasetItem(
+            question=req.question, answer=req.answer,
+            contexts=req.contexts, ground_truth=req.ground_truth,
+        )],
+        gemini_api_key=req.api_key if req.provider == "gemini" else "",
+        groq_api_key=req.api_key if req.provider == "groq" else "",
+        groq_model=req.model or "llama-3.3-70b-versatile",
+        openrouter_api_key=req.api_key if req.provider == "openrouter" else "",
+        openrouter_model=req.model if req.provider == "openrouter" else "",
+        use_ragas="ragas" in req.frameworks,
+        use_deepeval="deepeval" in req.frameworks,
+        confidence_mode=req.confidence_mode,
+    )
+    try:
+        full = await run_in_threadpool(_run_sync, inner)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+    # Flatten to one sample's scores
+    return {
+        "scores": {
+            **(full.get("ragas", [{}])[0] if full.get("ragas") else {}),
+            **(full.get("deepeval", [{}])[0] if full.get("deepeval") else {}),
+        },
+        "diagnosis": (full.get("diagnoses") or [None])[0],
+        "reference_free": full.get("reference_free", False),
+    }
 
 
 @router.get("/models/groq")
