@@ -11,7 +11,15 @@
 
 No answer generation happens inside this app — your API key is used only as a judge. It never gets stored.
 
-**Live demo:** [https://llmevaluation-production.up.railway.app](https://llmevaluation-production.up.railway.app)
+---
+
+## Try it live
+
+**[https://llmevaluation.up.railway.app](https://llmevaluation.up.railway.app)**
+
+No signup. No install. Bring a free API key from Gemini, Groq, or OpenRouter and run an evaluation in under a minute. A built-in sample dataset is included if you don't have data ready.
+
+---
 
 ![Home](screenshots/Home.png)
 
@@ -120,7 +128,7 @@ Score a single RAG output directly from your application via the REST API:
 ```python
 import requests
 
-r = requests.post("https://llmevaluation-production.up.railway.app/api/evaluate/single", json={
+r = requests.post("https://llmevaluation.up.railway.app/api/evaluate/single", json={
     "question": "What is RAG?",
     "answer": "RAG combines retrieval with generation...",
     "contexts": ["Retrieved chunk 1", "Retrieved chunk 2"],
