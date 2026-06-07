@@ -5,7 +5,7 @@
 ![RAGAS](https://img.shields.io/badge/RAGAS-VibrantLabs-orange)
 ![DeepEval](https://img.shields.io/badge/DeepEval-0.21-7c3aed)
 ![Railway](https://img.shields.io/badge/Deployed-Railway-blueviolet?logo=railway&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 **Evaluate any RAG pipeline in minutes.** Upload pre-generated answers, pick a judge model, and get structured scores across faithfulness, hallucination, relevancy, and more.
 
@@ -78,7 +78,7 @@ All three have a free tier — no credit card required to try.
 
 ```bash
 git clone https://github.com/kishan5822/RAGEval.git
-cd LLM_Evaluation
+cd RAGEval
 
 python -m venv venv
 venv\Scripts\pip install -r requirements.txt        # Windows
@@ -200,6 +200,18 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 - **Frontend** — Alpine.js, Tailwind CSS, Plotly.js (all CDN, no build step)
 - **Judge models** — OpenAI-compatible endpoints (Gemini, Groq, OpenRouter)
 - **Hosting** — Railway (auto-deploy from GitHub)
+
+---
+
+## Contributing
+
+Issues and PRs are welcome. If you find a bug or want to add a metric/provider, open an issue first so we can align on the approach.
+
+---
+
+## License
+
+[MIT](LICENSE) — free to use, modify, and distribute.
 
 ---
 
